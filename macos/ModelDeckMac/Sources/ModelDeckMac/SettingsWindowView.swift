@@ -1674,12 +1674,17 @@ struct GeneralSettingsPane: View {
                 // identities: it's the management surface.
                 Toggle("Show subscription emails", isOn: $deckModel.showAccountEmails)
                     .help("Show each subscription's identity (email) under its name in the popover. Off by default; applies to both providers. The Subscriptions pane always shows identities.")
-                // Tim directive 2026-08-02: the model window (e.g. Fable
-                // weekly) is the quota he plans around; the 5-hour burst
-                // limit kept stealing the headline. Off by default —
-                // today's lowest-window behavior stays until chosen.
-                Toggle("Lead with the model window (e.g. Fable)", isOn: $deckModel.preferModelWindowHeadline)
-                    .help("Claude cards headline the model-specific weekly window (like Fable) instead of whichever window is lowest. The 5-hour and all-model windows stay visible when a card is expanded, and sorting follows the displayed window. Cards without a model window are unaffected.")
+                // Issue #746 (Tim, 2026-10-08): which window Claude cards
+                // lead with, replacing the 2026-08-02 model-window switch.
+                // Opus 5.5 draws from the all-models weekly, so the choice is
+                // a window class; any Claude card can override it from its
+                // context menu. "Lowest window" is the original rule.
+                Picker("Claude cards lead with", selection: $deckModel.leadWindow) {
+                    ForEach(DeckLeadWindow.allCases, id: \.self) { choice in
+                        Text(choice.title).tag(choice)
+                    }
+                }
+                .help("Which usage window a Claude card's collapsed line shows. \"Lowest window\" follows whichever non-spend window has the least left. A chosen window the card does not report falls back to the lowest window. Right-click any Claude card → Lead With to pick a different window for just that card. Every window stays visible when a card is expanded, and sorting follows the displayed window.")
             }
 
             // Issue #319 (Tim, 2026-08-08): the Hide/Show system — a master

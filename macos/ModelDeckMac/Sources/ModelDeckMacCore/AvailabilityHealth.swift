@@ -402,11 +402,14 @@ public enum AvailabilityHealthEngine {
 
     // MARK: - Pool building (driver scopes + exclusions)
 
-    /// Driver scopes match the proxy-rebalance policy: claude → "Fable
-    /// weekly" (fallback "weekly"), codex → "weekly" only. Matching is
-    /// case-insensitive with the daemon's generic-weekly synonyms
-    /// ("week"/"7d"); model-scoped weeklies like "GPT-5-Codex weekly" never
-    /// match the generic scope.
+    /// The Fable-basis driver scopes: claude → "Fable weekly" (fallback
+    /// "weekly"), codex → "weekly" only. Matching is case-insensitive with
+    /// the daemon's generic-weekly synonyms ("week"/"7d"); model-scoped
+    /// weeklies like "GPT-5-Codex weekly" never match the generic scope.
+    /// Since 2026-10-08 (decision 0044) the proxy-rebalance policy drives
+    /// on the general weekly, and the app passes `generalWeekly: true`
+    /// unless the deck leads with the model window; this no-argument form
+    /// keeps the Fable basis for callers that ask for it by name.
     static func driverScopes(for provider: DeckProvider) -> (primary: String, fallback: String?) {
         driverScopes(for: provider, generalWeekly: false)
     }

@@ -316,11 +316,11 @@ struct Issue326ByRemainingTests {
         model.hideRenewingSoonEnabled = false
         #expect(visibleIDs(from: state, using: model).isEmpty)
 
-        model.preferModelWindowHeadline = true
+        model.leadWindow = .modelWeekly
         let displayedRow = try #require(DeckBuilder.rows(
             state: state,
             now: issue326Now,
-            preferModelWindowHeadline: true
+            leadWindow: .modelWeekly
         ).first)
         #expect(displayedRow.worstWindow?.scope == "week:fable")
         #expect(displayedRow.displayedRemainingPercent == 80)

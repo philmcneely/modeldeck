@@ -237,6 +237,42 @@ public enum UsageSeverity: Equatable, Sendable {
     }
 }
 
+/// Issue #746 (Tim, 2026-10-08): which window a Claude card's collapsed
+/// line leads with. Replaces the 2026-08-02 "lead with the model window"
+/// switch: Opus 5.5 draws from the all-models weekly and Anthropic reports
+/// no Opus-specific window, so "show me what I actually use" needs a choice
+/// of window class, not a Fable switch. One value for the deck (Settings →
+/// General) plus an optional per-card override (the card's context menu).
+/// Keyed on the window CLASS, never a model name, so a provider-side rename
+/// never strands a choice. `.lowest` is the original rule: the lowest %
+/// left, reset-soonest tie-break.
+public enum DeckLeadWindow: String, Equatable, Hashable, Sendable, CaseIterable {
+    case lowest
+    case fiveHour = "5h"
+    case generalWeekly = "weekly"
+    case modelWeekly = "model"
+
+    /// The window class to bind, or nil for the lowest-window rule.
+    public var pinWindow: MenuBarPinResolver.PinWindow? {
+        switch self {
+        case .lowest: return nil
+        case .fiveHour: return .fiveHour
+        case .generalWeekly: return .generalWeekly
+        case .modelWeekly: return .modelWeekly
+        }
+    }
+
+    /// Plain-words name for Settings, where no card supplies a title.
+    public var title: String {
+        switch self {
+        case .lowest: return "Lowest window"
+        case .fiveHour: return "5-hour limit"
+        case .generalWeekly: return "Weekly · all models"
+        case .modelWeekly: return "Model weekly (e.g. Fable)"
+        }
+    }
+}
+
 /// One rate-limit window inside an account row (5-hour / weekly / model-scoped).
 public struct DeckWindow: Equatable, Identifiable, Sendable {
     public var scope: String
@@ -416,24 +452,23 @@ public struct DeckAccountRow: Equatable, Identifiable, Sendable {
     /// window filtering). Feeds the per-card staleness marker; nil when no
     /// snapshot carries a parseable `observedAt`.
     public var newestObservedAt: Date?
-    /// Tim directive 2026-08-02: when ON, the card's binding window prefers
-    /// the model-scoped weekly (the "Weekly · Fable" class of window) over
-    /// the generic pool — the burst 5-hour window is noise for someone who
-    /// only plans around the model quota. Deliberately NOT keyed to a model
-    /// name: the preference follows whatever model-scoped window the daemon
-    /// reports, so a provider-side rename never strands it. Rows without a
-    /// measurable model-scoped window keep today's behavior (the preference
-    /// can never hide the only data a card has), and every derived value —
-    /// sort keys, summary, meter — follows the binding window, preserving
-    /// the #43 "visible order matches visible text" invariant.
-    public var prefersModelWindowHeadline: Bool
+    /// Issue #746 (Tim, 2026-10-08; supersedes the 2026-08-02 model-window
+    /// switch): the window class this card's collapsed line leads with —
+    /// the deck-wide choice, or the card's own override when one is set.
+    /// `.lowest` is the original rule. Keyed to a window CLASS, never a
+    /// model name, so a provider-side rename never strands it. A row that
+    /// doesn't report the chosen class keeps the lowest-window pick (no
+    /// preference can hide the only data a card has), and every derived
+    /// value — sort keys, summary, meter — follows the binding window,
+    /// preserving the #43 "visible order matches visible text" invariant.
+    public var leadWindow: DeckLeadWindow
     /// Issue #254 (Tim, 2026-08-05): the deck header's window toggle — when
     /// ON, Claude cards bind to the GENERAL weekly window ("Weekly · all
     /// models") instead of whatever they would otherwise headline. It
-    /// OVERRIDES `prefersModelWindowHeadline` rather than competing with it,
-    /// so the header button reads as the plain two-position switch Tim asked
-    /// for (Fable ↔ Weekly) while a fresh install's default headline is
-    /// untouched.
+    /// OVERRIDES `leadWindow` (deck-wide and per-card alike) rather than
+    /// competing with it, so the header button reads as the plain
+    /// two-position switch Tim asked for while a fresh install's default
+    /// headline is untouched.
     ///
     /// Motivation: the proxy's Fable/non-Fable split routing keeps accounts
     /// serving Sonnet/Opus on their general weekly quota after their Fable
@@ -620,17 +655,18 @@ public struct DeckAccountRow: Equatable, Identifiable, Sendable {
         // Claude cards ONLY (Tim's 0.3.15 report): Codex also reports a
         // model-scoped weekly ("GPT-…-Codex weekly"), and the preference
         // grabbing it replaced the real weekly headline with a fresh-window
-        // 100%. The directive was always about the Claude/Fable quota;
-        // Codex keeps its lowest-window headline regardless of the setting.
+        // 100%. The directive was always about the Claude quota; Codex
+        // keeps its lowest-window headline regardless of the setting.
         // Issue #254: the header toggle wins when it's on — it is the more
-        // immediate, explicitly-clicked control, and the two preferences
-        // name mutually exclusive windows (general weekly vs model weekly).
+        // immediate, explicitly-clicked control. Issue #746: otherwise the
+        // chosen window class binds (a per-card override is already folded
+        // into `leadWindow`), and `.lowest` leaves the search alone.
         if prefersGeneralWeeklyHeadline, provider == .claude {
             let generalWeekly = eligible.filter { DeckBuilder.windowRank(scope: $0.scope) == 1 }
             if !generalWeekly.isEmpty { eligible = generalWeekly }
-        } else if prefersModelWindowHeadline, provider == .claude {
-            let modelScoped = eligible.filter { DeckBuilder.windowRank(scope: $0.scope) == 2 }
-            if !modelScoped.isEmpty { eligible = modelScoped }
+        } else if provider == .claude, let chosen = leadWindow.pinWindow {
+            let matching = eligible.filter { chosen.matches(scope: $0.scope) }
+            if !matching.isEmpty { eligible = matching }
         }
         guard let worst = eligible.compactMap(\.remainingPercent).min() else {
             // Issue #139 (CodeRabbit, PR #142): an amount-only spend row —
@@ -754,7 +790,7 @@ public struct DeckAccountRow: Equatable, Identifiable, Sendable {
         isActive: Bool,
         activationState: ProviderActivationState = .unknown,
         newestObservedAt: Date? = nil,
-        prefersModelWindowHeadline: Bool = false,
+        leadWindow: DeckLeadWindow = .lowest,
         prefersGeneralWeeklyHeadline: Bool = false
     ) {
         self.account = account
@@ -763,7 +799,7 @@ public struct DeckAccountRow: Equatable, Identifiable, Sendable {
         self.isActive = isActive
         self.activationState = activationState
         self.newestObservedAt = newestObservedAt
-        self.prefersModelWindowHeadline = prefersModelWindowHeadline
+        self.leadWindow = leadWindow
         self.prefersGeneralWeeklyHeadline = prefersGeneralWeeklyHeadline
     }
 }
@@ -914,7 +950,8 @@ public enum DeckBuilder {
         state: DeckState,
         thresholds: UsageThresholds = .default,
         now: Date = Date(),
-        preferModelWindowHeadline: Bool = false,
+        leadWindow: DeckLeadWindow = .lowest,
+        leadWindowOverrides: [String: DeckLeadWindow] = [:],
         preferGeneralWeeklyHeadline: Bool = false
     ) -> [DeckAccountRow] {
         let usageByAccount = Dictionary(grouping: state.usage, by: \.accountId)
@@ -944,7 +981,8 @@ public enum DeckBuilder {
                     newestObservedAt: snapshots
                         .compactMap { DeckDateParsing.date(from: $0.observedAt) }
                         .max(),
-                    prefersModelWindowHeadline: preferModelWindowHeadline,
+                    // Issue #746: a per-card override wins over the deck setting.
+                    leadWindow: leadWindowOverrides[account.id] ?? leadWindow,
                     prefersGeneralWeeklyHeadline: preferGeneralWeeklyHeadline
                 )
             }
@@ -1041,12 +1079,13 @@ public enum DeckBuilder {
         direction: DeckSortDirection = .ascending,
         thresholds: UsageThresholds = .default,
         now: Date = Date(),
-        preferModelWindowHeadline: Bool = false,
+        leadWindow: DeckLeadWindow = .lowest,
+        leadWindowOverrides: [String: DeckLeadWindow] = [:],
         preferGeneralWeeklyHeadline: Bool = false
     ) -> [DeckColumn] {
         let allRows = rows(
             state: state, thresholds: thresholds, now: now,
-            preferModelWindowHeadline: preferModelWindowHeadline,
+            leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
             preferGeneralWeeklyHeadline: preferGeneralWeeklyHeadline
         )
         return [DeckProvider.claude, .codex, .grok].compactMap { provider in
@@ -1066,13 +1105,14 @@ public enum DeckBuilder {
         direction: DeckSortDirection = .ascending,
         thresholds: UsageThresholds = .default,
         now: Date = Date(),
-        preferModelWindowHeadline: Bool = false,
+        leadWindow: DeckLeadWindow = .lowest,
+        leadWindowOverrides: [String: DeckLeadWindow] = [:],
         preferGeneralWeeklyHeadline: Bool = false
     ) -> [DeckAccountRow] {
         sorted(
             rows(
                 state: state, thresholds: thresholds, now: now,
-                preferModelWindowHeadline: preferModelWindowHeadline,
+                leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
                 preferGeneralWeeklyHeadline: preferGeneralWeeklyHeadline
             ),
             by: sortOrder, direction: direction
@@ -1160,13 +1200,20 @@ public enum DeckBuilder {
     /// meaningless for subscription users — hide it entirely.
     /// Issue #139: payload-stated amounts make the row meaningful again —
     /// "$0.00 of $500.00" tells the user a live extra-usage budget exists.
-    /// Issue #621: the same rule covers a window of a kind the deck has no
-    /// title for — Anthropic's payload carried a "nimbus_quill" limit at 0%
-    /// with no reset on every account for weeks. It reappears the moment the
-    /// provider states usage or a reset for it; known kinds are never hidden.
+    /// Issue #621: a window of a kind the deck has no title for hides under
+    /// the same rule — Anthropic's payload carried a "nimbus_quill" limit at
+    /// 0% with no reset on every account for weeks.
+    /// Issue #745 (Tim, 2026-10-08): a reset date alone no longer earns an
+    /// unknown kind a row — "iguana_necktie" arrived with an expiry date at
+    /// 0% used, and nobody can act on it. An unknown kind shows only once
+    /// the provider states real usage on it. Known kinds are never hidden;
+    /// spend keeps the #28/#139 rule, where a reset or dollars still count.
     static func isMeaninglessWindow(_ window: DeckWindow) -> Bool {
-        guard window.isSpend || !isKnownKind(window.scope) else { return false }
-        guard window.resetsAt == nil, window.spendText == nil else { return false }
+        if window.isSpend {
+            guard window.resetsAt == nil, window.spendText == nil else { return false }
+        } else if isKnownKind(window.scope) {
+            return false
+        }
         guard let remaining = window.remainingPercent else { return true } // unknown usage
         return remaining >= 100 // zero usage
     }
@@ -1430,7 +1477,10 @@ public final class DeckPopoverModel: ObservableObject {
     static let layoutDefaultsKey = "modeldeck.popover.layout"
     static let sortDefaultsKey = "modeldeck.popover.sort"
     static let showEmailsDefaultsKey = "modeldeck.popover.showEmails"
+    /// The pre-#746 switch: read once for migration, never written again.
     static let preferModelWindowDefaultsKey = "modeldeck.popover.preferModelWindow"
+    static let leadWindowDefaultsKey = "modeldeck.popover.leadWindow"
+    static let leadWindowOverridesDefaultsKey = "modeldeck.popover.leadWindowOverrides"
     static let focusGeneralWeeklyDefaultsKey = "modeldeck.popover.focusGeneralWeekly"
     static let glassDefaultsKey = "modeldeck.popover.glass"
     static let hideZeroWeightDefaultsKey = "modeldeck.popover.hideZeroWeight"
@@ -1927,37 +1977,74 @@ public final class DeckPopoverModel: ObservableObject {
         didSet { defaults.set(showAccountEmails, forKey: Self.showEmailsDefaultsKey) }
     }
 
-    /// Tim directive 2026-08-02: Claude cards lead with the model-scoped
-    /// weekly window (the "Weekly · Fable" class) instead of the lowest
-    /// window — the 5-hour burst limit is noise for planning around the
-    /// model quota. DEFAULT OFF: today's lowest-remaining behavior stays
-    /// the default; this is the settings distinction Tim asked for. App-
-    /// local preference (UserDefaults, the #73 pattern); never synced to
-    /// the daemon. Cards without a measurable model-scoped window are
-    /// unaffected (the preference can never hide the only data a card has).
-    @Published public var preferModelWindowHeadline: Bool {
-        didSet { defaults.set(preferModelWindowHeadline, forKey: Self.preferModelWindowDefaultsKey) }
+    /// Issue #746 (Tim, 2026-10-08): which window Claude cards lead with,
+    /// deck-wide — Settings → General's "Claude cards lead with" picker.
+    /// Replaces the 2026-08-02 "lead with the model window" switch: Opus
+    /// 5.5 draws from the all-models weekly and Anthropic reports no
+    /// Opus-specific window, so the choice is a window CLASS. DEFAULT
+    /// `.lowest` (the original rule); an install that had the old switch
+    /// on starts at `.modelWeekly`, so nothing moves until the user picks.
+    /// App-local (UserDefaults, the #73 pattern), never synced to the
+    /// daemon. A card that doesn't report the chosen class keeps the
+    /// lowest-window pick (no preference can hide the only data a card has).
+    @Published public var leadWindow: DeckLeadWindow {
+        didSet {
+            defaults.set(leadWindow.rawValue, forKey: Self.leadWindowDefaultsKey)
+            onHealthBasisChange?(healthUsesGeneralWeekly)
+        }
+    }
+
+    /// Issue #746: per-card overrides of `leadWindow`, keyed by account id
+    /// (the card's context-menu "Lead With" picker). Absent = follow the
+    /// deck setting. App-local like the #319 manual hide list.
+    @Published public private(set) var leadWindowOverrides: [String: DeckLeadWindow] {
+        didSet {
+            defaults.set(
+                leadWindowOverrides.mapValues(\.rawValue),
+                forKey: Self.leadWindowOverridesDefaultsKey
+            )
+        }
+    }
+
+    public func leadWindowOverride(for accountID: String) -> DeckLeadWindow? {
+        leadWindowOverrides[accountID]
+    }
+
+    /// nil clears the override, so the card follows the deck setting again.
+    public func setLeadWindowOverride(_ choice: DeckLeadWindow?, for accountID: String) {
+        leadWindowOverrides[accountID] = choice
     }
 
     /// Issue #254 (Tim, 2026-08-05): the deck header's window toggle. ON =
     /// Claude cards headline "Weekly · all models"; OFF = whatever they
-    /// would otherwise show, so with `preferModelWindowHeadline` on (Tim's
-    /// state) the button is exactly the Fable ↔ Weekly switch he asked for,
-    /// and a default install's headline is unchanged either way. App-local
-    /// (UserDefaults, the #73 pattern), never synced to the daemon; it
-    /// persists across popover opens like every other view preference.
+    /// would otherwise show (`leadWindow`), so the button is the plain
+    /// "look at the weekly" switch Tim asked for, and a default install's
+    /// headline is unchanged either way. App-local (UserDefaults, the #73
+    /// pattern), never synced to the daemon; it persists across popover
+    /// opens like every other view preference.
     @Published public var focusGeneralWeeklyHeadline: Bool {
         didSet {
             defaults.set(focusGeneralWeeklyHeadline, forKey: Self.focusGeneralWeeklyDefaultsKey)
-            onGeneralWeeklyFocusChange?(focusGeneralWeeklyHeadline)
+            onHealthBasisChange?(healthUsesGeneralWeekly)
         }
     }
 
-    /// Issue #297: fired on every toggle flip so the app can mirror the
-    /// value into `MenuBarStatusModel.focusGeneralWeekly` — the health-mode
-    /// dot evaluates the same pool as the popover chip. App-local wiring
-    /// only; nothing here goes to the daemon.
-    public var onGeneralWeeklyFocusChange: ((Bool) -> Void)?
+    /// Issues #258/#297/#746: the pool the Availability Health chip and the
+    /// menu-bar health dot evaluate for Claude — the question the deck is
+    /// currently showing. The Fable pool only while the deck leads with the
+    /// model window and the header toggle is off; otherwise the all-models
+    /// weekly, which is also what the proxy routing weights drive on since
+    /// 2026-10-08 (decision 0044). Per-card overrides don't move it: the
+    /// chip is a column-level verdict.
+    public var healthUsesGeneralWeekly: Bool {
+        focusGeneralWeeklyHeadline || leadWindow != .modelWeekly
+    }
+
+    /// Issue #297: fired whenever `healthUsesGeneralWeekly` may have changed,
+    /// so the app can mirror it into `MenuBarStatusModel.focusGeneralWeekly`
+    /// — the health-mode dot evaluates the same pool as the popover chip.
+    /// App-local wiring only; nothing here goes to the daemon.
+    public var onHealthBasisChange: ((Bool) -> Void)?
 
     /// Issue #270: how opaque the deck's backing fill is. App-local
     /// (UserDefaults, the #73 pattern), never synced to the daemon — it is a
@@ -2424,7 +2511,7 @@ public final class DeckPopoverModel: ObservableObject {
         guard hideShowEnabled else { return false }
         return DeckBuilder.rows(
             state: state, thresholds: thresholds, now: now,
-            preferModelWindowHeadline: preferModelWindowHeadline,
+            leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
             preferGeneralWeeklyHeadline: focusGeneralWeeklyHeadline
         ).contains { isRowHidden($0, now: now) }
     }
@@ -2498,7 +2585,7 @@ public final class DeckPopoverModel: ObservableObject {
     public func eyeToggleChangesNothingVisible(state: DeckState, now: Date = Date()) -> Bool {
         !DeckBuilder.rows(
             state: state, thresholds: thresholds, now: now,
-            preferModelWindowHeadline: preferModelWindowHeadline,
+            leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
             preferGeneralWeeklyHeadline: focusGeneralWeeklyHeadline
         ).contains { hiddenUnderCurrentMode($0, now: now) }
     }
@@ -2789,8 +2876,15 @@ public final class DeckPopoverModel: ObservableObject {
         )
         // Absent key reads false — the issue #73 default-off requirement.
         self.showAccountEmails = defaults.bool(forKey: Self.showEmailsDefaultsKey)
-        // Absent key reads false — today's lowest-remaining default.
-        self.preferModelWindowHeadline = defaults.bool(forKey: Self.preferModelWindowDefaultsKey)
+        // Issue #746: an absent key reads the pre-#746 switch, so an install
+        // that led with the model window keeps doing so until the user
+        // picks; a fresh install reads "Lowest window".
+        self.leadWindow = defaults.string(forKey: Self.leadWindowDefaultsKey)
+            .flatMap(DeckLeadWindow.init(rawValue:))
+            ?? (defaults.bool(forKey: Self.preferModelWindowDefaultsKey) ? .modelWeekly : .lowest)
+        self.leadWindowOverrides = (
+            defaults.dictionary(forKey: Self.leadWindowOverridesDefaultsKey) as? [String: String] ?? [:]
+        ).compactMapValues(DeckLeadWindow.init(rawValue:))
         // Absent key reads false — the header toggle starts off, so a fresh
         // install's headline is whatever it was before issue #254.
         self.focusGeneralWeeklyHeadline = defaults.bool(forKey: Self.focusGeneralWeeklyDefaultsKey)
@@ -2890,7 +2984,7 @@ public final class DeckPopoverModel: ObservableObject {
         usageChangesByAccount = changeTracker.capture(
             rows: DeckBuilder.rows(
                 state: state, thresholds: thresholds, now: now,
-                preferModelWindowHeadline: preferModelWindowHeadline,
+                leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
                 preferGeneralWeeklyHeadline: focusGeneralWeeklyHeadline
             )
         )
@@ -2913,7 +3007,7 @@ public final class DeckPopoverModel: ObservableObject {
     public func columns(for state: DeckState, now: Date = Date()) -> [DeckColumn] {
         DeckBuilder.columns(
             state: state, sortOrder: sortOrder, direction: sortDirection, thresholds: thresholds, now: now,
-            preferModelWindowHeadline: preferModelWindowHeadline,
+            leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
             preferGeneralWeeklyHeadline: focusGeneralWeeklyHeadline
         )
         .map { column in
@@ -2936,7 +3030,7 @@ public final class DeckPopoverModel: ObservableObject {
             applyingActivation(
                 DeckBuilder.interleavedRows(
                     state: state, sortOrder: sortOrder, direction: sortDirection, thresholds: thresholds, now: now,
-                    preferModelWindowHeadline: preferModelWindowHeadline,
+                    leadWindow: leadWindow, leadWindowOverrides: leadWindowOverrides,
                     preferGeneralWeeklyHeadline: focusGeneralWeeklyHeadline
                 )
             ),

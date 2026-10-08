@@ -91,8 +91,11 @@ struct GeneralWeeklyFocusChangeHookTests {
 
     @Test func hookFiresWithEachFlipsNewValue() {
         let m = model()
+        // Issue #746: the hook carries the COMBINED basis, and only the
+        // model window gives the toggle a Fable basis to flip away from.
+        m.leadWindow = .modelWeekly
         var seen: [Bool] = []
-        m.onGeneralWeeklyFocusChange = { seen.append($0) }
+        m.onHealthBasisChange = { seen.append($0) }
         m.toggleGeneralWeeklyFocus()
         m.toggleGeneralWeeklyFocus()
         #expect(seen == [true, false])
@@ -102,9 +105,26 @@ struct GeneralWeeklyFocusChangeHookTests {
         // The header button goes through toggleGeneralWeeklyFocus(), but
         // any future setter path must keep the mirror honest.
         let m = model()
+        m.leadWindow = .modelWeekly
         var seen: [Bool] = []
-        m.onGeneralWeeklyFocusChange = { seen.append($0) }
+        m.onHealthBasisChange = { seen.append($0) }
         m.focusGeneralWeeklyHeadline = true
         #expect(seen == [true])
+    }
+
+    /// TRIPWIRE #746: the lead-window picker moves the health basis too —
+    /// any choice but the model window evaluates the all-models weekly, and
+    /// the header toggle still wins over the picker while it's on.
+    @Test func leadWindowPickerFiresTheHookWithTheCombinedBasis() {
+        let m = model()
+        #expect(m.healthUsesGeneralWeekly, "a fresh install leads with the lowest window: weekly basis")
+        var seen: [Bool] = []
+        m.onHealthBasisChange = { seen.append($0) }
+        m.leadWindow = .modelWeekly
+        m.leadWindow = .generalWeekly
+        m.leadWindow = .modelWeekly
+        m.focusGeneralWeeklyHeadline = true
+        #expect(seen == [false, true, false, true])
+        #expect(m.healthUsesGeneralWeekly)
     }
 }

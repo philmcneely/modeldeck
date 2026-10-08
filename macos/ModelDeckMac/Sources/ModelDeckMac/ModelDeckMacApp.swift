@@ -290,14 +290,15 @@ struct ModelDeckMacApp: App {
             }
             statusModel?.startAutoRefresh(interval: settings.effectiveAutoRefreshInterval)
         }
-        // Issue #297: the deck's general-weekly focus toggle is app-local
-        // (UserDefaults on the popover model, never a daemon setting), so it
-        // can't ride onApply above — mirror it into the status model here,
-        // seeded now and on every flip, so the health-mode dot always
-        // evaluates the same pool as the popover chip.
-        statusModel.focusGeneralWeekly = deckModel.focusGeneralWeeklyHeadline
-        deckModel.onGeneralWeeklyFocusChange = { [weak statusModel] focused in
-            statusModel?.focusGeneralWeekly = focused
+        // Issue #297: the deck's health basis (the #254 focus toggle and,
+        // since #746, the lead-window picker) is app-local (UserDefaults on
+        // the popover model, never a daemon setting), so it can't ride
+        // onApply above — mirror it into the status model here, seeded now
+        // and on every change, so the health-mode dot always evaluates the
+        // same pool as the popover chip.
+        statusModel.focusGeneralWeekly = deckModel.healthUsesGeneralWeekly
+        deckModel.onHealthBasisChange = { [weak statusModel] generalWeekly in
+            statusModel?.focusGeneralWeekly = generalWeekly
         }
         // Issue #482: the menu bar's "total:" modes read the SAME column
         // construction and per-row staleness seam as the popover header's

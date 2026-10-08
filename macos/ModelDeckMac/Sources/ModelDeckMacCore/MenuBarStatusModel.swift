@@ -123,12 +123,14 @@ public final class MenuBarStatusModel: ObservableObject {
         didSet { recomputeIconState() }
     }
 
-    /// Issue #297: the deck's #254 general-weekly focus toggle, mirrored in
-    /// from `DeckPopoverModel` (it is an app-local popover preference, not a
-    /// daemon setting, so it never arrives through the settings document
-    /// like the pin and quiet mode do). The health-mode dot must evaluate
-    /// the same pool as the popover chip (issue #258: the toggle, Claude
-    /// only inside the engine) — otherwise dot and chip can disagree.
+    /// Issue #297: the deck's health basis (`DeckPopoverModel
+    /// .healthUsesGeneralWeekly`: the #254 focus toggle or, since #746, any
+    /// lead window but the model window), mirrored in from the popover
+    /// model (an app-local preference, not a daemon setting, so it never
+    /// arrives through the settings document like the pin and quiet mode
+    /// do). The health-mode dot must evaluate the same pool as the popover
+    /// chip (issue #258, Claude only inside the engine) — otherwise dot and
+    /// chip can disagree.
     /// Display-only like every mode input here: `worstRemaining` and
     /// `onStateUpdate` are untouched.
     @Published public var focusGeneralWeekly: Bool = false {

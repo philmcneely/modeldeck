@@ -528,9 +528,10 @@ struct DeckBuilderTests {
         )
     }
 
-    /// TRIPWIRE #621: a limit kind the deck cannot name, at zero/unknown
-    /// usage with no reset, is hidden; it comes back as soon as the provider
-    /// states usage or a reset for it. Known kinds are never hidden by this.
+    /// TRIPWIRE #621 / #745: a limit kind the deck cannot name is hidden
+    /// until the provider states real usage on it. A reset date alone does
+    /// not earn it a row (#745: "iguana_necktie" arrived with an expiry
+    /// date at 0% used). Known kinds are never hidden by this.
     @Test func unknownKindWindowHiddenUntilItSaysSomething() {
         // Zero usage, no reset: hidden.
         let zero = DeckBuilder.rows(state: unknownKindState(remaining: 100), now: now)[0]
@@ -541,9 +542,14 @@ struct DeckBuilderTests {
         // Real usage: visible, ranked with the model-scoped windows.
         let used = DeckBuilder.rows(state: unknownKindState(remaining: 60), now: now)[0]
         #expect(used.windows.map(\.scope) == ["5h", "week", "nimbus quill"])
-        // A stated reset: visible even at zero usage.
-        let reset = DeckBuilder.rows(state: unknownKindState(remaining: 100, resetsIn: 86_400), now: now)[0]
-        #expect(reset.windows.map(\.scope) == ["5h", "week", "nimbus quill"])
+        // Issue #745: a stated reset at zero usage is still hidden — the
+        // exact "iguana necktie" shape (100% left, resets in four weeks).
+        let reset = DeckBuilder.rows(state: unknownKindState(remaining: 100, resetsIn: 28 * 86_400), now: now)[0]
+        #expect(reset.windows.map(\.scope) == ["5h", "week"])
+        // The first point of real usage brings it back, reset and all.
+        let touched = DeckBuilder.rows(state: unknownKindState(remaining: 99, resetsIn: 28 * 86_400), now: now)[0]
+        #expect(touched.windows.map(\.scope) == ["5h", "week", "nimbus quill"])
+        #expect(touched.windows.last?.resetsAt != nil)
     }
 
     /// TRIPWIRE #621: the hide rule must not swallow a known window that
@@ -933,17 +939,17 @@ struct DeckPopoverModelTests {
         #expect(DeckPopoverModel(defaults: defaults).focusGeneralWeeklyHeadline == false)
     }
 
-    @Test func weeklyFocusIsIndependentOfTheSettingsModelWindowPreference() {
+    @Test func weeklyFocusIsIndependentOfTheSettingsLeadWindow() {
         // The two are layered, not exclusive: the header toggle overrides
-        // the Settings preference while it's on and hands it back when off.
+        // the Settings choice while it's on and hands it back when off.
         let defaults = freshDefaults()
         let model = DeckPopoverModel(defaults: defaults)
-        model.preferModelWindowHeadline = true
+        model.leadWindow = .modelWeekly
         model.toggleGeneralWeeklyFocus()
-        #expect(model.preferModelWindowHeadline == true)
+        #expect(model.leadWindow == .modelWeekly)
         #expect(model.focusGeneralWeeklyHeadline == true)
         model.toggleGeneralWeeklyFocus()
-        #expect(model.preferModelWindowHeadline == true)
+        #expect(model.leadWindow == .modelWeekly)
     }
 
     // Issue #226: the deck's "Add Account…" entry points (empty-state CTA
@@ -2022,12 +2028,12 @@ struct ModelWindowHeadlineTests {
 
     @Test func offByDefaultKeepsTheLowestWindow() {
         let row = DeckBuilder.rows(state: burstDrainedState(), now: now).first
-        #expect(row?.prefersModelWindowHeadline == false)
+        #expect(row?.leadWindow == .lowest)
         #expect(row?.worstWindow?.scope == "5h")
     }
 
     @Test func preferenceHeadlinesTheModelWindowAndSortKeysFollow() {
-        let row = DeckBuilder.rows(state: burstDrainedState(), now: now, preferModelWindowHeadline: true).first
+        let row = DeckBuilder.rows(state: burstDrainedState(), now: now, leadWindow: .modelWeekly).first
         #expect(row?.worstWindow?.scope == "Fable weekly")
         // Issue #43 invariant: the sort keys are the DISPLAYED window's.
         #expect(row?.lowestRemaining == 49)
@@ -2044,7 +2050,7 @@ struct ModelWindowHeadlineTests {
                 snapshot("c1", scope: "week:opus", remaining: 41, resetsIn: 86_400),
             ]
         )
-        let row = DeckBuilder.rows(state: state, now: now, preferModelWindowHeadline: true).first
+        let row = DeckBuilder.rows(state: state, now: now, leadWindow: .modelWeekly).first
         #expect(row?.worstWindow?.scope == "week:opus")
     }
 
@@ -2060,7 +2066,7 @@ struct ModelWindowHeadlineTests {
                 snapshot("x1", scope: "GPT-5.3-Codex-Spark weekly", remaining: 100, resetsIn: 7 * 86_400),
             ]
         )
-        let row = DeckBuilder.rows(state: state, now: now, preferModelWindowHeadline: true).first
+        let row = DeckBuilder.rows(state: state, now: now, leadWindow: .modelWeekly).first
         #expect(row?.worstWindow?.scope == "weekly")
         #expect(row?.lowestRemaining == 60)
     }
@@ -2075,7 +2081,7 @@ struct ModelWindowHeadlineTests {
                 snapshot("x1", scope: "week", remaining: 80, resetsIn: 86_400),
             ]
         )
-        let row = DeckBuilder.rows(state: state, now: now, preferModelWindowHeadline: true).first
+        let row = DeckBuilder.rows(state: state, now: now, leadWindow: .modelWeekly).first
         #expect(row?.worstWindow?.scope == "5h")
     }
 
@@ -2087,7 +2093,7 @@ struct ModelWindowHeadlineTests {
                 snapshot("c1", scope: "Fable weekly", remaining: nil),
             ]
         )
-        let row = DeckBuilder.rows(state: state, now: now, preferModelWindowHeadline: true).first
+        let row = DeckBuilder.rows(state: state, now: now, leadWindow: .modelWeekly).first
         #expect(row?.worstWindow?.scope == "5h")
     }
 }
@@ -2126,7 +2132,7 @@ struct WeeklyWindowToggleTests {
     @Test func toggleOffLeavesTheModelWindowHeadline() {
         // The state Tim clicks FROM: model-window preference on, Fable shown.
         let row = DeckBuilder.rows(
-            state: splitRoutingState(), now: now, preferModelWindowHeadline: true
+            state: splitRoutingState(), now: now, leadWindow: .modelWeekly
         ).first { $0.account.id == "c1" }
         #expect(row?.prefersGeneralWeeklyHeadline == false)
         #expect(row?.worstWindow?.scope == "Fable weekly")
@@ -2135,7 +2141,7 @@ struct WeeklyWindowToggleTests {
     @Test func toggleOnHeadlinesTheGeneralWeeklyAndSortKeysFollow() {
         let row = DeckBuilder.rows(
             state: splitRoutingState(), now: now,
-            preferModelWindowHeadline: true, preferGeneralWeeklyHeadline: true
+            leadWindow: .modelWeekly, preferGeneralWeeklyHeadline: true
         ).first { $0.account.id == "c1" }
         #expect(row?.worstWindow?.scope == "week")
         #expect(row?.worstSummary?.hasPrefix("Weekly · all models") == true)
@@ -2163,7 +2169,7 @@ struct WeeklyWindowToggleTests {
     @Test func codexCardsAreUntouched() {
         let row = DeckBuilder.rows(
             state: splitRoutingState(), now: now,
-            preferModelWindowHeadline: true, preferGeneralWeeklyHeadline: true
+            leadWindow: .modelWeekly, preferGeneralWeeklyHeadline: true
         ).first { $0.account.id == "x1" }
         // Codex keeps its lowest-window headline regardless of either
         // preference — its "week" here is lowest, and it got there by the
@@ -2429,5 +2435,162 @@ struct ProxyWeightPresentationTests {
         {"id":"a1","provider":"claude","label":"Studio","enabled":true,"isDefault":false,"proxyWeight":3}
         """.utf8))
         #expect(plain.proxyFableExcluded == nil)
+    }
+}
+
+// MARK: - Lead-window picker (issue #746, Tim 2026-10-08)
+
+/// Which window a Claude card leads with: a deck-wide choice (Settings →
+/// General) plus a per-card override (the card's context menu). Replaces
+/// the 2026-08-02 model-window switch. Precedence: header toggle (#254)
+/// → per-card override → deck setting → lowest; a chosen class the card
+/// doesn't report falls back to the lowest window; Codex is untouched.
+@Suite("Lead-window picker (issue #746)")
+struct LeadWindowPickerTests {
+    /// Tim's live shape on 2026-10-08: Fable untouched, the all-models
+    /// weekly (where Opus 5.5 draws from) nearly spent, 5-hour mid-way.
+    private func opusHeavyState() -> DeckState {
+        DeckState(
+            accounts: [
+                account("c1", provider: "claude", label: "LoanMeld", isDefault: true),
+                account("c2", provider: "claude", label: "Click AI"),
+                account("x1", provider: "codex", label: "Workshop"),
+            ],
+            usage: [
+                snapshot("c1", scope: "5h", remaining: 80, resetsIn: 2 * 3600),
+                snapshot("c1", scope: "week", remaining: 21, resetsIn: 37 * 3600),
+                snapshot("c1", scope: "Fable weekly", remaining: 100, resetsIn: 37 * 3600),
+                snapshot("c2", scope: "5h", remaining: 71, resetsIn: 3 * 3600),
+                snapshot("c2", scope: "week", remaining: 85, resetsIn: 5 * 3600),
+                snapshot("c2", scope: "Fable weekly", remaining: 97, resetsIn: 5 * 3600),
+                snapshot("x1", scope: "5h", remaining: 90, resetsIn: 3600),
+                snapshot("x1", scope: "week", remaining: 60, resetsIn: 3 * 86_400),
+            ]
+        )
+    }
+
+    private func row(_ id: String, _ rows: [DeckAccountRow]) -> DeckAccountRow? {
+        rows.first { $0.account.id == id }
+    }
+
+    @Test func eachChoiceBindsItsWindowClass() {
+        let state = opusHeavyState()
+        let lowest = row("c1", DeckBuilder.rows(state: state, now: now, leadWindow: .lowest))
+        #expect(lowest?.worstWindow?.scope == "week")
+        let fiveHour = row("c1", DeckBuilder.rows(state: state, now: now, leadWindow: .fiveHour))
+        #expect(fiveHour?.worstWindow?.scope == "5h")
+        #expect(fiveHour?.lowestRemaining == 80, "sort keys follow the displayed window (#43)")
+        let weekly = row("c1", DeckBuilder.rows(state: state, now: now, leadWindow: .generalWeekly))
+        #expect(weekly?.worstWindow?.scope == "week")
+        let model = row("c1", DeckBuilder.rows(state: state, now: now, leadWindow: .modelWeekly))
+        #expect(model?.worstWindow?.scope == "Fable weekly")
+        #expect(model?.worstSummary?.hasPrefix("Weekly · Fable") == true)
+    }
+
+    @Test func perCardOverrideBeatsTheDeckSetting() {
+        let rows = DeckBuilder.rows(
+            state: opusHeavyState(), now: now,
+            leadWindow: .generalWeekly, leadWindowOverrides: ["c2": .fiveHour]
+        )
+        #expect(row("c1", rows)?.worstWindow?.scope == "week")
+        #expect(row("c2", rows)?.worstWindow?.scope == "5h")
+        #expect(row("c2", rows)?.leadWindow == .fiveHour)
+    }
+
+    @Test func headerToggleBeatsBothTheOverrideAndTheDeckSetting() {
+        let rows = DeckBuilder.rows(
+            state: opusHeavyState(), now: now,
+            leadWindow: .fiveHour, leadWindowOverrides: ["c2": .modelWeekly],
+            preferGeneralWeeklyHeadline: true
+        )
+        #expect(row("c1", rows)?.worstWindow?.scope == "week")
+        #expect(row("c2", rows)?.worstWindow?.scope == "week")
+    }
+
+    @Test func aChosenClassTheCardDoesNotReportFallsBackToLowest() {
+        let state = DeckState(
+            accounts: [account("c1", provider: "claude", label: "Studio")],
+            usage: [
+                snapshot("c1", scope: "5h", remaining: 33, resetsIn: 3600),
+                snapshot("c1", scope: "week", remaining: 80, resetsIn: 86_400),
+            ]
+        )
+        let noModel = DeckBuilder.rows(state: state, now: now, leadWindow: .modelWeekly).first
+        #expect(noModel?.worstWindow?.scope == "5h")
+        let onlyWeek = DeckState(
+            accounts: state.accounts,
+            usage: [snapshot("c1", scope: "week", remaining: 80, resetsIn: 86_400)]
+        )
+        let noBurst = DeckBuilder.rows(state: onlyWeek, now: now, leadWindow: .fiveHour).first
+        #expect(noBurst?.worstWindow?.scope == "week")
+    }
+
+    @Test func codexCardsIgnoreTheDeckSettingAndOverridesAlike() {
+        let rows = DeckBuilder.rows(
+            state: opusHeavyState(), now: now,
+            leadWindow: .fiveHour, leadWindowOverrides: ["x1": .fiveHour]
+        )
+        #expect(row("x1", rows)?.worstWindow?.scope == "week", "Codex keeps its lowest window")
+    }
+}
+
+/// The picker's app-local state: persistence, the one-time migration from
+/// the pre-#746 switch, and the model folding overrides into its rows.
+@MainActor
+@Suite("Lead-window picker persistence (issue #746)")
+struct LeadWindowPickerPersistenceTests {
+    private func defaults() -> UserDefaults { ScratchDefaults.make("issue746-tests") }
+
+    @Test func absentKeysReadLowestWithNoOverrides() {
+        let model = DeckPopoverModel(defaults: defaults())
+        #expect(model.leadWindow == .lowest)
+        #expect(model.leadWindowOverrides.isEmpty)
+    }
+
+    @Test func choiceAndOverridesPersistAcrossInstances() {
+        let defaults = defaults()
+        let model = DeckPopoverModel(defaults: defaults)
+        model.leadWindow = .generalWeekly
+        model.setLeadWindowOverride(.fiveHour, for: "c2")
+        let reloaded = DeckPopoverModel(defaults: defaults)
+        #expect(reloaded.leadWindow == .generalWeekly)
+        #expect(reloaded.leadWindowOverride(for: "c2") == .fiveHour)
+        reloaded.setLeadWindowOverride(nil, for: "c2")
+        #expect(DeckPopoverModel(defaults: defaults).leadWindowOverrides.isEmpty)
+    }
+
+    /// TRIPWIRE #746: an install that had "Lead with the model window" on
+    /// keeps leading with it until the user picks — then the new choice
+    /// wins even though the old key is still on disk.
+    @Test func oldModelWindowSwitchMigratesOnce() {
+        let defaults = defaults()
+        defaults.set(true, forKey: "modeldeck.popover.preferModelWindow")
+        let migrated = DeckPopoverModel(defaults: defaults)
+        #expect(migrated.leadWindow == .modelWeekly)
+        #expect(!migrated.healthUsesGeneralWeekly, "the Fable health basis rides along until the user picks")
+        migrated.leadWindow = .lowest
+        #expect(DeckPopoverModel(defaults: defaults).leadWindow == .lowest)
+    }
+
+    @Test func theModelFoldsOverridesIntoItsRows() {
+        let model = DeckPopoverModel(defaults: defaults())
+        model.leadWindow = .generalWeekly
+        model.setLeadWindowOverride(.fiveHour, for: "c2")
+        let state = DeckState(
+            accounts: [
+                account("c1", provider: "claude", label: "LoanMeld", isDefault: true),
+                account("c2", provider: "claude", label: "Click AI"),
+            ],
+            usage: [
+                snapshot("c1", scope: "5h", remaining: 80, resetsIn: 2 * 3600),
+                snapshot("c1", scope: "week", remaining: 21, resetsIn: 37 * 3600),
+                snapshot("c2", scope: "5h", remaining: 71, resetsIn: 3 * 3600),
+                snapshot("c2", scope: "week", remaining: 85, resetsIn: 5 * 3600),
+            ]
+        )
+        let claude = model.columns(for: state, now: now).first { $0.provider == .claude }
+        let byID = Dictionary(uniqueKeysWithValues: (claude?.rows ?? []).map { ($0.account.id, $0) })
+        #expect(byID["c1"]?.worstWindow?.scope == "week")
+        #expect(byID["c2"]?.worstWindow?.scope == "5h")
     }
 }

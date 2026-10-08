@@ -333,7 +333,7 @@ struct DeckPopoverView: View {
         .fixedSize()
         .help(isOn
             ? "Claude cards are showing the weekly (all models) window. Click to go back."
-            : "Show the weekly (all models) window on Claude cards instead of the model window.")
+            : "Show the weekly (all models) window on Claude cards instead of their usual lead window.")
         .accessibilityLabel("Weekly window on Claude cards")
         .accessibilityValue(isOn ? "on" : "off")
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
@@ -1003,10 +1003,11 @@ struct DeckPopoverView: View {
                 // the pre-#244 evaluation exactly.
                 burstPointsPerDay: statusModel.burstRate(for: provider),
                 // Issue #258 (Tim): the chip answers the question the deck
-                // is SHOWING — with the #254 toggle on, the cards headline
-                // "Weekly · all models", so the verdict evaluates that pool
+                // is SHOWING — with the #254 toggle on, or (#746) any lead
+                // window but the model window, the cards headline the
+                // all-models weekly, so the verdict evaluates that pool
                 // instead of Fable's. Claude-only inside the engine.
-                generalWeekly: deckModel.focusGeneralWeeklyHeadline
+                generalWeekly: deckModel.healthUsesGeneralWeekly
             ),
             now: now
         )
@@ -2274,6 +2275,22 @@ struct DeckAccountRowView: View {
                     }
                 }
             }
+            // Issue #746 (Tim, 2026-10-08): which window THIS card leads
+            // with — the same shape as the #292 menu-bar window picker,
+            // offering only windows the card reports. "Deck setting" follows
+            // Settings → General. Claude only, like the deck setting.
+            if row.provider == .claude {
+                Picker("Lead With", selection: Binding(
+                    get: { deckModel.leadWindowOverride(for: row.account.id)?.rawValue ?? "" },
+                    set: { key in
+                        deckModel.setLeadWindowOverride(DeckLeadWindow(rawValue: key), for: row.account.id)
+                    }
+                )) {
+                    ForEach(leadWindowMenuOptions, id: \.key) { option in
+                        Text(option.title).tag(option.key)
+                    }
+                }
+            }
             if let provider = DeckProvider.from(row.account.provider) {
                 Toggle(
                     "Follow Active \(provider.displayName) Subscription",
@@ -2317,6 +2334,29 @@ struct DeckAccountRowView: View {
         if let current = deckModel.menuBarPinWindow(for: row.account.id),
            !options.contains(where: { $0.key == current.rawValue }) {
             options.append((key: current.rawValue, title: "\(current.genericTitle) (not reported)"))
+        }
+        return options
+    }
+
+    /// Issue #746: the card's lead-window rows — "Deck setting" (naming the
+    /// deck's current choice), "Lowest window", then only the window classes
+    /// this card reports, each named with the card's own window title
+    /// ("Weekly · Fable"). A stored choice whose class isn't reported right
+    /// now earns a ghost row so the picker always contains its selection.
+    private var leadWindowMenuOptions: [(key: String, title: String)] {
+        var options = [(key: "", title: "Deck setting · \(deckModel.leadWindow.title)")]
+        for choice in DeckLeadWindow.allCases {
+            guard let window = choice.pinWindow else {
+                options.append((key: choice.rawValue, title: choice.title))
+                continue
+            }
+            if let reported = row.windows.first(where: { window.matches(scope: $0.scope) }) {
+                options.append((key: choice.rawValue, title: reported.title))
+            }
+        }
+        if let current = deckModel.leadWindowOverride(for: row.account.id),
+           !options.contains(where: { $0.key == current.rawValue }) {
+            options.append((key: current.rawValue, title: "\(current.title) (not reported)"))
         }
         return options
     }
