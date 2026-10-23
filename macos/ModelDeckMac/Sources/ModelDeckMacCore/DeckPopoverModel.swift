@@ -305,6 +305,9 @@ public struct DeckWindow: Equatable, Identifiable, Sendable {
     /// render as if current, and a fresh % is never fabricated. Pure
     /// render-time derivation; the stored snapshot fields are untouched.
     public var idleRollforward: IdleRollforward.Notice?
+    /// Issue #771: when the provider reported this reading — the "This week"
+    /// graph ends its line on it, so the dot matches the card's number.
+    public var observedAt: Date?
 
     public var id: String { scope }
 
@@ -415,7 +418,8 @@ public struct DeckWindow: Equatable, Identifiable, Sendable {
         anchor: WindowAnchor = .anchored,
         rolloverText: String? = nil,
         spendText: String? = nil,
-        idleRollforward: IdleRollforward.Notice? = nil
+        idleRollforward: IdleRollforward.Notice? = nil,
+        observedAt: Date? = nil
     ) {
         self.scope = scope
         self.title = title
@@ -428,6 +432,7 @@ public struct DeckWindow: Equatable, Identifiable, Sendable {
         self.rolloverText = rolloverText
         self.spendText = spendText
         self.idleRollforward = idleRollforward
+        self.observedAt = observedAt
     }
 }
 
@@ -1192,7 +1197,8 @@ public enum DeckBuilder {
             spendText: UsageScope.isSpend(snapshot.scope)
                 ? spendAmountText(snapshot.detail?.spend)
                 : nil,
-            idleRollforward: rollforward
+            idleRollforward: rollforward,
+            observedAt: observedDate
         )
     }
 
@@ -1620,7 +1626,8 @@ public final class DeckPopoverModel: ObservableObject {
                   cadenceNoticeVisible: cadenceNoticeVisible,
                   healthChipProviders: healthChipProviders,
                   updateBadgeVisible: updateBadgeVisible,
-                  proxyCredentialBroken: proxyCredentialBroken
+                  proxyCredentialBroken: proxyCredentialBroken,
+                  weeklyGraphsOffered: usageAnalyticsDashboardURL != nil
               ).contains(presented)
         else { return }
         presentedWarning = nil
@@ -1648,13 +1655,18 @@ public final class DeckPopoverModel: ObservableObject {
     /// credential indicator. It rides a closure for the same reason
     /// `staleness` does — the verdict needs the repair model and the deck's
     /// routed-failure alerts, neither of which this model holds.
+    /// Issue #771: a card's "This week" graph is live while the card offers
+    /// one (`weeklyGraphOffer(for:isExpanded:)`): a weekly to draw, and
+    /// `weeklyGraphsOffered` (the analytics flag the daemon's history route
+    /// needs).
     public static func liveWarningIDs(
         rows: [DeckAccountRow],
         staleness: (DeckAccountRow) -> DeckFreshness.CardStaleness?,
         cadenceNoticeVisible: Bool,
         healthChipProviders: [DeckProvider] = [],
         updateBadgeVisible: Bool = false,
-        proxyCredentialBroken: (DeckAccountRow) -> Bool = { _ in false }
+        proxyCredentialBroken: (DeckAccountRow) -> Bool = { _ in false },
+        weeklyGraphsOffered: Bool = true
     ) -> Set<DeckWarningID> {
         var live: Set<DeckWarningID> = [DeckWarningID(topic: .footerFreshness)]
         if cadenceNoticeVisible {
@@ -1681,6 +1693,9 @@ public final class DeckPopoverModel: ObservableObject {
             }
             if proxyCredentialBroken(row) {
                 live.insert(DeckWarningID(topic: .proxyCredential, elementID: row.id))
+            }
+            if weeklyGraphsOffered, WeeklyUsageGraph.window(for: row) != nil {
+                live.insert(DeckWarningID(topic: .weeklyGraph, elementID: row.id))
             }
         }
         return live
@@ -1819,6 +1834,19 @@ public final class DeckPopoverModel: ObservableObject {
     /// as `menuBarPinnedSetting`); the URL itself is derived from the
     /// daemon configuration via `UsageAnalytics.dashboardURL(base:)`.
     @Published public var usageAnalyticsDashboardURL: URL?
+
+    /// Issue #771: how a card offers its "This week" graph, or nil when it
+    /// offers none. The card asks this one question for everything about the
+    /// graph: whether it has one, which window it draws, and which number
+    /// opens it (the headline "% left" while collapsed; once expanded, the
+    /// graphed window's own row and no other). The analytics flag gates the
+    /// daemon's whole /api/usage/* family (404 while off, src/server.mjs),
+    /// history included, so with it off no card offers a graph that could
+    /// only fail to load.
+    public func weeklyGraphOffer(for row: DeckAccountRow, isExpanded: Bool) -> WeeklyUsageGraph.Offer? {
+        guard usageAnalyticsDashboardURL != nil, let window = WeeklyUsageGraph.window(for: row) else { return nil }
+        return WeeklyUsageGraph.Offer(window: window, trigger: isExpanded ? .row(scope: window.id) : .headline)
+    }
 
     /// Fired when a card's context menu picks a new pin value ("" = unpin,
     /// account id, or a follow-active sentinel). The app wires it to
@@ -2847,19 +2875,24 @@ public final class DeckPopoverModel: ObservableObject {
     /// Issue #677: nil leaves the waiting line readable with no action, the
     /// honest state for a build with no daemon connection.
     private let codexMigrator: (any CodexProfilesMigrating)?
+    /// Issue #771: the cards' "This week" graphs, read when one opens. Held
+    /// here because every card already observes this model.
+    public let weeklyGraph: WeeklyUsageGraphModel
 
     public init(
         thresholds: UsageThresholds = .default,
         defaults: UserDefaults = .standard,
         activator: (any AccountActivating)? = nil,
         stateProvider: (any DeckStateProviding)? = nil,
-        codexMigrator: (any CodexProfilesMigrating)? = nil
+        codexMigrator: (any CodexProfilesMigrating)? = nil,
+        historyProvider: (any UsageHistoryProviding)? = nil
     ) {
         self.thresholds = thresholds
         self.defaults = defaults
         self.activator = activator
         self.stateProvider = stateProvider
         self.codexMigrator = codexMigrator
+        self.weeklyGraph = WeeklyUsageGraphModel(provider: historyProvider)
         self.changeTracker = DeckChangeTracker(defaults: defaults)
         self.layout = defaults.string(forKey: Self.layoutDefaultsKey)
             .flatMap(DeckLayout.init(rawValue:)) ?? .twoColumn

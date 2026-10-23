@@ -180,6 +180,44 @@ public struct DaemonClient: Sendable {
         try await get("/api/usage/exhaustion-forecast", timeout: Self.dataReadTimeout)
     }
 
+    /// `GET /api/usage/history` — one window's stored readings, an hour per
+    /// row, for issue #771's weekly graph. A plain read like `/api/state`, so
+    /// no session token. Values are percent-encoded by hand for the reason
+    /// `grokCandidateURL` gives: a literal `+` reaches the daemon's
+    /// `URLSearchParams` as a space.
+    public func usageHistory(
+        accountID: String,
+        scope: String,
+        since: Date,
+        until: Date
+    ) async throws -> [UsageHistoryBucket] {
+        struct Envelope: Decodable { var rows: [UsageHistoryBucket]? }
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=?#")
+        let timestamp = ISO8601DateFormatter()
+        let query = [
+            ("accountId", accountID),
+            ("scope", scope),
+            ("since", timestamp.string(from: since)),
+            ("until", timestamp.string(from: until)),
+            ("bucket", "hour"),
+        ]
+        guard var components = URLComponents(
+            url: configuration.baseURL.appendingPathComponent("/api/usage/history"),
+            resolvingAgainstBaseURL: false
+        ) else { throw DaemonClientError.invalidResponse }
+        components.percentEncodedQuery = query
+            .map { "\($0)=\($1.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")" }
+            .joined(separator: "&")
+        guard let url = components.url else { throw DaemonClientError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = Self.dataReadTimeout
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let envelope: Envelope = try await send(request)
+        return envelope.rows ?? []
+    }
+
     /// `GET /api/session` — fetches the daemon's mutation token. The server
     /// requires the same token as BOTH the `x-modeldeck-token` header and the
     /// `modeldeck_session` cookie on every non-GET request (`mutationAllowed`
@@ -827,3 +865,5 @@ extension DaemonClient: CodexProfilesMigrating {}
 extension DaemonClient: WorstCapacityProviding {}
 
 extension DaemonClient: ClientKeyReporting {}
+
+extension DaemonClient: UsageHistoryProviding {}

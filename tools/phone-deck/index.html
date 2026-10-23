@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2f2f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1012" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ModelDeck">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/icons/favicon-32.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>ModelDeck</title>
+<style>
+/* ModelDeck's deck language: the Mac popover's grounds, inks and the locked
+   severity palette (blue healthy, gold at 25% left, red at 10% left). */
+:root {
+  --ground: #f2f2f0;
+  --card: #ffffff;
+  --card-2: #f7f7f5;
+  --line: rgba(28, 29, 31, .07);
+  --line-2: rgba(28, 29, 31, .13);
+  --ink: #1c1d1f;
+  --ink-2: #5c5e63;
+  --ink-3: #8b8d93;
+  --track: rgba(28, 29, 31, .08);
+  --ok: #007aff;
+  --ok-ink: #0a6fe0;
+  --warn: #d9a121;
+  --warn-ink: #9f7408;
+  --crit: #ff3b30;
+  --crit-ink: #dc2f26;
+  --none: #b9bbc0;
+  --shadow: 0 1px 1px rgba(20, 20, 30, .03), 0 4px 16px rgba(20, 20, 30, .05);
+  --pill: rgba(255, 255, 255, .8);
+  --pill-sel: rgba(28, 29, 31, .07);
+  --hatch: rgba(28, 29, 31, .05);
+  --sheet-shade: rgba(10, 10, 14, .28);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0f1012;
+    --card: #1a1b1e;
+    --card-2: #222327;
+    --line: rgba(255, 255, 255, .06);
+    --line-2: rgba(255, 255, 255, .12);
+    --ink: #ececee;
+    --ink-2: #a2a4aa;
+    --ink-3: #6d6f76;
+    --track: rgba(255, 255, 255, .09);
+    --ok: #0a84ff;
+    --ok-ink: #3a9dff;
+    --warn: #d9a121;
+    --warn-ink: #e3b23c;
+    --crit: #ff453a;
+    --crit-ink: #ff6259;
+    --none: #4a4c52;
+    --shadow: 0 0 0 .5px rgba(255, 255, 255, .03);
+    --pill: rgba(38, 39, 43, .8);
+    --pill-sel: rgba(255, 255, 255, .1);
+    --hatch: rgba(255, 255, 255, .035);
+    --sheet-shade: rgba(0, 0, 0, .5);
+  }
+}
+.s-healthy { --sev: var(--ok); --sev-ink: var(--ok-ink); }
+.s-warning { --sev: var(--warn); --sev-ink: var(--warn-ink); }
+.s-critical { --sev: var(--crit); --sev-ink: var(--crit-ink); }
+.s-unknown { --sev: var(--none); --sev-ink: var(--ink-3); }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; background: var(--ground); }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 0;
+}
+button { font: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap {
+  max-width: 1180px; margin: 0 auto; overflow-x: clip; /* the view-change slide never makes the page scroll sideways */
+  padding: calc(env(safe-area-inset-top) + 12px) max(16px, env(safe-area-inset-right)) calc(var(--sw-b) + var(--sw-h) + 24px) max(16px, env(safe-area-inset-left));
+}
+@media (min-width: 760px) { .wrap { padding-left: max(28px, env(safe-area-inset-left)); padding-right: max(28px, env(safe-area-inset-right)); } }
+
+/* ---------- shared chrome ---------- */
+.top { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 18px; letter-spacing: -.02em; }
+.brand svg { width: 18px; height: 15px; display: block; }
+.fresh { margin-left: auto; text-align: right; font-size: 12.5px; color: var(--ink-3); line-height: 1.25; }
+.fresh b { font-weight: 550; color: var(--ink-2); }
+.srcs { display: inline-flex; gap: 8px; margin-top: 2px; }
+.src { display: inline-flex; align-items: center; gap: 4px; }
+.src::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #34c759; }
+.src.off::before { background: var(--none); }
+.banner {
+  margin: 10px 0 0; padding: 10px 14px; border-radius: 12px; font-size: 13.5px; color: var(--ink-2);
+  background: var(--card); border: 1px solid var(--line);
+}
+.banner b { color: var(--ink); font-weight: 600; }
+.foot { margin: 34px 4px 0; font-size: 12.5px; color: var(--ink-3); text-align: center; line-height: 1.5; }
+.pm { display: block; flex: none; border-radius: 22%; object-fit: contain; }
+.pm-fallback {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  border-radius: 24%; background: var(--track); color: var(--ink-2); font-weight: 650;
+}
+.bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 3px; background: var(--sev); min-width: 0; transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+.bar.empty { background: repeating-linear-gradient(90deg, var(--track) 0 6px, transparent 6px 10px); }
+.pct { color: var(--sev-ink); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.notice { margin-top: 9px; font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.notice.warn { color: var(--warn-ink); }
+.notice.warn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex: none; }
+.eyebrow { font-size: 11.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.h-title { font-size: 32px; line-height: 1.1; font-weight: 750; letter-spacing: -.03em; margin: 18px 4px 4px; }
+.h-sub { margin: 0 4px; color: var(--ink-2); font-size: 15px; }
+.sec-h { display: flex; align-items: baseline; gap: 8px; margin: 26px 4px 10px; }
+.sec-h h3 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); }
+.sec-h span { margin-left: auto; font-size: 12.5px; color: var(--ink-3); }
+
+/* sparkline (A expanded, C sheet) */
+.spark { margin: 16px 0 2px; padding: 12px 12px 10px; border-radius: 12px; background: var(--card-2); }
+.spark-h { display: flex; align-items: baseline; justify-content: space-between; font-size: 12.5px; color: var(--ink-3); margin-bottom: 6px; }
+.spark-h b { color: var(--ink); font-weight: 600; font-size: 13.5px; }
+.spark-p { position: relative; }
+.spark svg { display: block; width: 100%; height: 76px; overflow: visible; }
+.spark-dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--card-2); }
+.spark .area { fill: url(#sparkFill); }
+.spark .line { fill: none; stroke: var(--ok); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spark .pace { fill: none; stroke: var(--ink-3); stroke-width: 1.25; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; opacity: .8; }
+.spark .grid { stroke: var(--line-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.spark-f { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-3); margin-top: 6px; }
+.spark-k { font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+.spark-k i { display: inline-block; width: 14px; border-top: 1.5px dashed var(--ink-3); vertical-align: middle; margin-right: 5px; }
+
+/* ---------- view switch: a floating tab bar on the phone, in the header row on iPad ---------- */
+:root { --sw-h: 62px; --sw-w: 86px; --sw-pad: 5px; --sw-b: max(14px, calc(env(safe-area-inset-bottom) + 6px)); }
+.switcher {
+  position: fixed; left: 50%; bottom: var(--sw-b); z-index: 40; transform: translateX(-50%);
+  display: grid; grid-template-columns: repeat(3, var(--sw-w)); height: var(--sw-h); padding: var(--sw-pad);
+  border-radius: 999px; background: var(--pill);
+  -webkit-backdrop-filter: saturate(1.8) blur(20px); backdrop-filter: saturate(1.8) blur(20px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .16), 0 0 0 .5px var(--line-2);
+}
+.sw-sel {
+  position: absolute; top: var(--sw-pad); bottom: var(--sw-pad); left: var(--sw-pad); width: var(--sw-w); border-radius: 999px;
+  background: var(--pill-sel); transform: translateX(calc(var(--i, 0) * 100%));
+}
+.switcher button {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer;
+  color: var(--ink-2); font-size: 11px; font-weight: 600; letter-spacing: .01em; line-height: 1;
+}
+.switcher button::after { content: ""; position: absolute; inset: calc(-1 * var(--sw-pad)) 0; } /* the bar's full height takes the tap */
+.switcher button[aria-current] { color: var(--ok-ink); }
+.switcher button:active { opacity: .6; }
+.switcher button:focus-visible { outline: 2px solid var(--ok); outline-offset: -2px; }
+.switcher svg { display: block; width: 24px; height: 24px; }
+@media (min-width: 760px) {
+  :root { --sw-h: 44px; --sw-w: 104px; --sw-pad: 4px; }
+  .switcher { top: calc(env(safe-area-inset-top) + 12px); bottom: auto; }
+  .switcher button { flex-direction: row; gap: 7px; font-size: 14.5px; letter-spacing: -.01em; }
+  .switcher svg { width: 19px; height: 19px; }
+  .wrap { padding-bottom: calc(env(safe-area-inset-bottom) + 40px); }
+}
+
+/* ---------- A · Deck ---------- */
+.deckA { display: grid; gap: 0 22px; margin-top: 6px; }
+.deckA.cols-2 { grid-template-columns: 1fr 1fr; }
+.deckA.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.grp { margin-top: 20px; }
+.ghead { display: flex; align-items: center; gap: 10px; margin: 0 4px 10px; }
+.ghead h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+.ghead .count { margin-left: auto; font-size: 14px; color: var(--ink-3); }
+.card {
+  background: var(--card); border-radius: 16px; padding: 14px 16px 15px; margin-bottom: 10px;
+  border: 1px solid var(--line); box-shadow: var(--shadow); cursor: pointer; user-select: none;
+  transition: transform .15s ease;
+}
+.card:active { transform: scale(.985); }
+.card:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+.r1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.r1 .wt { display: inline-flex; align-items: center; gap: 3px; flex: none; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.name { font-weight: 650; font-size: 17px; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan { color: var(--ink-3); font-size: 14.5px; white-space: nowrap; }
+.r1 .pct { margin-left: auto; font-size: 17px; padding-left: 8px; transition: opacity .2s; }
+.card.open .r1 .pct { opacity: 0; }
+.fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .32s cubic-bezier(.2, .8, .2, 1), opacity .2s; }
+.fold > div { overflow: hidden; min-height: 0; }
+.card.open .fold.sum, .card:not(.open) .fold.more { grid-template-rows: 0fr; opacity: 0; }
+.r2 { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; font-size: 14.5px; color: var(--ink-2); }
+.r2 span:last-child { white-space: nowrap; color: var(--ink-3); }
+.sum .bar { margin-top: 10px; }
+.win { padding-top: 13px; }
+.win + .win { margin-top: 1px; }
+.w1 { display: flex; align-items: baseline; gap: 10px; }
+.w1 .t { font-size: 15px; font-weight: 550; }
+.w1 .pct { margin-left: auto; font-size: 15px; }
+.win .bar { margin-top: 7px; height: 5px; }
+.w2 { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+.w2 .age { color: var(--warn-ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 14px; font-size: 12.5px; color: var(--ink-3); }
+.chipm { padding: 3px 9px; border-radius: 999px; background: var(--card-2); border: 1px solid var(--line); white-space: nowrap; }
+.chipm.warn { color: var(--warn-ink); }
+.unread .r2 { color: var(--ink-3); }
+.unread { cursor: default; }
+.unread:active { transform: none; }
+
+/* ---------- B · Where's room? ---------- */
+/* scroll-padding keeps the snapped cards on the page margin, not the screen edge */
+.chips { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: 2px 16px 6px; margin: 0 -16px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+@media (min-width: 760px) { .chips { margin: 0 -28px; padding-left: 28px; padding-right: 28px; scroll-padding: 0 28px; } }
+.rchip {
+  flex: none; scroll-snap-align: start; width: 156px; padding: 12px 13px 12px; border-radius: 16px;
+  background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.rchip .cd { font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rchip .cd small { font-size: 14px; font-weight: 600; color: var(--ink-2); margin-left: 1px; }
+.rchip .who { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rchip .what { font-size: 12px; color: var(--ink-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rchip .frees { display: inline-block; margin-top: 9px; font-size: 12px; font-weight: 650; padding: 2px 8px; border-radius: 999px; color: var(--sev-ink); background: color-mix(in srgb, var(--sev) 14%, transparent); }
+.boards { display: grid; gap: 4px 22px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 760px) { .boards { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.board-h { display: flex; align-items: center; gap: 10px; margin: 26px 4px 12px; }
+.board-h h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+.board-h span { margin-left: auto; font-size: 13px; color: var(--ink-3); }
+.pick {
+  position: relative; overflow: hidden; padding: 16px 18px 18px; border-radius: 22px; background: var(--card);
+  border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.pick-top { position: relative; }
+.pick-row { position: relative; display: flex; gap: 18px; align-items: center; margin-top: 14px; }
+.pick::before {
+  content: ""; position: absolute; inset: -40% auto auto -30%; width: 80%; height: 160%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--sev) 16%, transparent), transparent);
+  pointer-events: none;
+}
+.ringbox { position: relative; flex: none; display: grid; place-items: center; }
+.ringbox svg { display: block; }
+.ring .trk { stroke: var(--track); fill: none; }
+.ring .val { stroke: var(--sev); fill: none; stroke-linecap: round; transition: stroke-dasharray .9s cubic-bezier(.2, .8, .2, 1); }
+.ringbox .in { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.big { font-size: 40px; font-weight: 750; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+.big small { font-size: 18px; font-weight: 650; letter-spacing: 0; margin-left: 1px; color: var(--ink-2); }
+.in .lbl { font-size: 11px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-top: 3px; }
+.pick-b { position: relative; min-width: 0; flex: 1; }
+.pick-n .plan { font-size: 15px; font-weight: 500; letter-spacing: 0; margin-left: 6px; }
+.pick-n { font-size: 24px; font-weight: 750; letter-spacing: -.025em; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick-p { font-size: 14px; color: var(--ink-3); }
+.lims { display: grid; gap: 8px; }
+.lim { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 12.5px; color: var(--ink-2); align-items: baseline; }
+.lim .pct { font-size: 12.5px; }
+.lim .bar { grid-column: 1 / -1; height: 4px; }
+.lim .when { grid-column: 1 / -1; color: var(--ink-3); font-size: 11.5px; margin-top: -1px; }
+.pace { position: relative; margin-top: 14px; font-size: 13px; color: var(--warn-ink); line-height: 1.35; }
+.pace small { display: block; color: var(--ink-3); font-size: 11px; margin-top: 1px; }
+.ranks { list-style: none; margin: 10px 0 0; padding: 0; background: var(--card); border-radius: 18px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; }
+.rk { display: flex; align-items: center; gap: 12px; padding: 11px 14px; }
+.rk + .rk { border-top: 1px solid var(--line); }
+.rk .ringbox .in { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.rk-b { min-width: 0; flex: 1; }
+.rk-n { font-weight: 650; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rk-n .plan { font-size: 13px; font-weight: 400; margin-left: 4px; }
+.rk-s { font-size: 12.5px; color: var(--ink-3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rk-s.warn { color: var(--warn-ink); }
+.minis { display: grid; gap: 4px; width: 54px; flex: none; }
+.mini { display: grid; grid-template-columns: 14px 1fr; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 650; color: var(--ink-3); }
+.mini .bar { height: 4px; }
+.rk.out { opacity: .78; }
+.rk.out .rk-s { color: var(--crit-ink); }
+.sub-h { margin: 14px 6px 6px; font-size: 12px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.unreadB { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.ur { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--card); border: 1px dashed var(--line-2); }
+.ur b { display: block; font-size: 15px; font-weight: 650; }
+.ur span { font-size: 12.5px; color: var(--ink-3); }
+
+/* ---------- C · Grid ---------- */
+.tl { margin-top: 8px; padding: 14px 14px 12px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.tl-track { position: relative; height: 92px; margin: 0 6px; }
+.tl-axis { position: absolute; left: 0; right: 0; bottom: 26px; height: 2px; border-radius: 1px; background: var(--track); }
+.tl-day { position: absolute; bottom: 26px; height: 2px; background: color-mix(in srgb, var(--ok) 35%, transparent); left: 0; }
+.tick { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 11px; color: var(--ink-3); white-space: nowrap; text-align: center; }
+.tick::before { content: ""; display: block; width: 1px; height: 7px; background: var(--line-2); margin: 0 auto 6px; }
+.tick.now { color: var(--ink); font-weight: 650; }
+.tick.now::before { width: 2px; background: var(--ink); height: 9px; margin-bottom: 4px; }
+.mk {
+  -webkit-appearance: none; appearance: none; position: absolute; transform: translate(-50%, 50%); border-radius: 50%; padding: 0; cursor: pointer;
+  background: var(--c); border: 2px solid var(--card); box-shadow: 0 0 0 .5px var(--line-2);
+  transition: transform .15s;
+}
+.mk.on { transform: translate(-50%, 50%) scale(1.35); box-shadow: 0 0 0 2px var(--ink); }
+.mk::after { content: ""; position: absolute; inset: -9px; }
+.tl-d { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 11px; border-top: 1px solid var(--line); min-height: 46px; }
+.tl-d .cd { font-size: 20px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-d .tx { min-width: 0; font-size: 13px; color: var(--ink-2); line-height: 1.3; }
+.tl-d .tx b { color: var(--ink); font-weight: 650; }
+.tl-d .frees { margin-left: auto; flex: none; font-size: 12px; font-weight: 650; padding: 3px 9px; border-radius: 999px; color: var(--sev-ink); background: color-mix(in srgb, var(--sev) 14%, transparent); }
+.gridwrap { margin-top: 4px; overflow-x: auto; border-radius: 18px; background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.heat { display: grid; min-width: 100%; width: max-content; grid-template-columns: minmax(118px, 1.25fr) repeat(var(--cols), minmax(76px, 1fr)); }
+.heat > * { min-width: 0; }
+.hh { position: sticky; top: 0; padding: 12px 4px 10px; font-size: 11.5px; font-weight: 650; color: var(--ink-2); text-align: center; line-height: 1.2; background: var(--card); }
+.hh small { display: block; font-weight: 500; color: var(--ink-3); }
+.hh.first { text-align: left; padding-left: 14px; }
+.first { position: sticky; left: 0; z-index: 1; background: var(--card); }
+.gr { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 12px 14px 6px; font-size: 13px; font-weight: 700; border-top: 1px solid var(--line); }
+.an { padding: 6px 6px 6px 14px; display: flex; flex-direction: column; justify-content: center; min-height: 58px; }
+.an b { font-size: 14.5px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an span { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+.an .flag { color: var(--warn-ink); }
+.cell {
+  -webkit-appearance: none; appearance: none; margin: 3px; border: 0; border-radius: 12px; cursor: pointer; padding: 6px 2px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: color-mix(in oklab, var(--sev) calc(var(--a) * 100%), var(--card));
+  color: var(--ink); transition: transform .12s;
+}
+.cell:active { transform: scale(.94); }
+.cell.hot { color: #fff; }
+.cell .v { font-size: 19px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.cell .v small { font-size: 11px; font-weight: 650; margin-left: 1px; opacity: .75; }
+.cell .r { font-size: 10.5px; font-weight: 550; opacity: .72; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cell .r2c { display: none; }
+.cell.na { background: transparent; cursor: default; color: var(--ink-3); }
+.cell.na .v { font-size: 15px; font-weight: 500; opacity: .5; }
+.cell.idle, .span-ur { background: repeating-linear-gradient(135deg, var(--hatch) 0 6px, transparent 6px 12px); color: var(--ink-3); }
+.cell.idle .v { font-size: 13px; font-weight: 600; letter-spacing: 0; }
+.span-ur { grid-column: 2 / -1; margin: 3px; border-radius: 12px; display: flex; align-items: center; padding: 8px 14px; font-size: 12.5px; color: var(--ink-3); border: 1px dashed var(--line-2); }
+.legend { display: flex; align-items: center; gap: 10px; margin: 12px 6px 0; font-size: 11.5px; color: var(--ink-3); flex-wrap: wrap; }
+.legend .sw { display: inline-flex; gap: 3px; }
+.legend .sw i { width: 18px; height: 10px; border-radius: 3px; display: block; }
+@media (min-width: 760px) {
+  .heat { grid-template-columns: minmax(170px, 1.2fr) repeat(var(--cols), minmax(150px, 1fr)); }
+  .an { min-height: 70px; }
+  .cell { padding: 10px 8px; border-radius: 14px; gap: 2px; }
+  .cell .v { font-size: 25px; }
+  .cell .rr { text-align: center; }
+  .cell .r { font-size: 12px; display: block; }
+  .cell .r2c { display: block; font-size: 11px; opacity: .62; white-space: nowrap; }
+  .tl-track { height: 104px; }
+}
+
+/* ---------- sheet (C cell detail) ---------- */
+.shade { position: fixed; inset: 0; z-index: 60; background: var(--sheet-shade); opacity: 0; pointer-events: none; transition: opacity .25s; }
+.shade.on { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; z-index: 61; left: 0; right: 0; bottom: 0; margin: 0 auto; max-width: 520px;
+  background: var(--card); border-radius: 24px 24px 0 0; padding: 10px 20px calc(env(safe-area-inset-bottom) + 22px);
+  transform: translateY(105%); transition: transform .34s cubic-bezier(.2, .8, .2, 1);
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, .2);
+}
+.sheet.on { transform: none; }
+@media (min-width: 760px) {
+  .sheet { bottom: auto; top: 50%; border-radius: 24px; transform: translateY(-40%) scale(.96); opacity: 0; transition: transform .28s cubic-bezier(.2, .8, .2, 1), opacity .2s; pointer-events: none; padding-bottom: 22px; }
+  .sheet.on { transform: translateY(-50%); opacity: 1; pointer-events: auto; }
+}
+.grab { width: 38px; height: 5px; border-radius: 3px; background: var(--line-2); margin: 0 auto 14px; }
+.sh-h { display: flex; align-items: center; gap: 10px; }
+.sh-h b { font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
+.sh-h span { font-size: 13px; color: var(--ink-3); }
+.sh-x { margin-left: auto; width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--track); color: var(--ink-2); font-size: 16px; cursor: pointer; }
+.sh-v { display: flex; align-items: baseline; gap: 10px; margin-top: 16px; }
+.sh-v .big { font-size: 48px; color: var(--sev-ink); }
+.sh-v .big small { color: var(--sev-ink); opacity: .7; }
+.sh-v span { color: var(--ink-3); font-size: 14px; }
+.sheet .bar { margin-top: 12px; height: 7px; }
+.sh-l { margin-top: 14px; display: grid; gap: 8px; font-size: 14px; }
+.sh-l div { display: flex; justify-content: space-between; gap: 10px; }
+.sh-l div span:first-child { color: var(--ink-3); }
+.sh-l div span:last-child { text-align: right; }
+
+/* ---------- loading ---------- */
+.loading { margin-top: 30vh; text-align: center; color: var(--ink-3); font-size: 14px; }
+.loading .brand { justify-content: center; margin-bottom: 10px; color: var(--ink); }
+@keyframes breathe { 50% { opacity: .45; } }
+.loading p { animation: breathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a84ff" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#0a84ff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
+<div class="wrap"><main id="app"><div class="loading"><div class="brand"><svg viewBox="0 0 16 13" aria-hidden="true"><rect width="12" height="3" rx="1.5" fill="#4C8DFF"/><rect y="5" width="8" height="3" rx="1.5" fill="#E0A94A"/><rect y="10" width="16" height="3" rx="1.5" fill="#EA5C50"/></svg><span>ModelDeck</span></div><p>Reading the M5 and the M1…</p></div></main></div>
+<div class="shade" id="shade"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Window detail"></div>
+<nav class="switcher" id="switcher" aria-label="Views">
+  <span class="sw-sel" aria-hidden="true"></span>
+  <button type="button" data-view="0"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4.5" width="13" height="3.5" rx="1.75"/><rect x="3" y="10.25" width="8.5" height="3.5" rx="1.75"/><rect x="3" y="16" width="18" height="3.5" rx="1.75"/></svg>Deck</button>
+  <button type="button" data-view="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8" opacity=".3"/><path d="M12 4a8 8 0 1 1-7.61 10.47"/></svg>Room</button>
+  <button type="button" data-view="2"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="2"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="2" opacity=".5"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="2" opacity=".5"/><rect x="13" y="13" width="7.5" height="7.5" rx="2"/></svg>Grid</button>
+</nav>
+<script>
+'use strict';
+// ---------- constants and formatting (all times Pacific, labeled) ----------
+const TZ = 'America/Los_Angeles';
+const MIN = 60e3, HOUR = 36e5, DAY = 864e5;
+// The three views in the switch's order: A Deck, B Room ("Where's room?"), C Grid.
+const VARIANTS = ['A', 'B', 'C'];
+const VIEW_KEY = 'modeldeck.phone.view'; // the last view shown on this device
+const PROVIDERS = {
+  claude: { name: 'Claude', mark: '/marks/claude.png', color: '#d97757' },
+  codex: { name: 'Codex', mark: '/marks/codex.png', color: '#48a868' },
+  grok: { name: 'Grok', mark: '/marks/grok.png', color: '#8e9097' },
+  antigravity: { name: 'Antigravity', mark: null, color: '#8e9097' },
+};
+const ORDER = ['claude', 'codex', 'grok', 'antigravity'];
+const MARK_SVG = '<svg viewBox="0 0 16 13" aria-hidden="true"><rect width="12" height="3" rx="1.5" fill="#4C8DFF"/><rect y="5" width="8" height="3" rx="1.5" fill="#E0A94A"/><rect y="10" width="16" height="3" rx="1.5" fill="#EA5C50"/></svg>';
+
+const F = {
+  time: new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }),
+  hour: new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric' }),
+  wd: new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }),
+  md: new Intl.DateTimeFormat('en-US', { timeZone: TZ, month: 'short', day: 'numeric' }),
+  day: new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }),
+  hm: new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }),
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ms = (iso) => (iso ? Date.parse(iso) : null);
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+// "5:00 PM PT" today, "Thu 5:59 PM PT" this week, "Nov 5, 12:59 AM PT" beyond.
+function whenPT(t, now) {
+  const d = new Date(t);
+  if (F.day.format(d) === F.day.format(new Date(now))) return `${F.time.format(d)} PT`;
+  const sameWeekday = F.wd.format(d) === F.wd.format(new Date(now));
+  if (t > now && t - now < 7 * DAY && !sameWeekday) return `${F.wd.format(d)} ${F.time.format(d)} PT`;
+  return `${F.md.format(d)}, ${F.time.format(d)} PT`;
+}
+// "38 m", "2 h 14 m", "3 d 4 h".
+function span(d) {
+  const m = Math.max(1, Math.floor(d / MIN));
+  if (m < 60) return `${m} m`;
+  const h = Math.floor(m / 60), mm = m % 60;
+  if (h < 24) return mm ? `${h} h ${mm} m` : `${h} h`;
+  const dd = Math.floor(h / 24), hh = h % 24;
+  return hh ? `${dd} d ${hh} h` : `${dd} d`;
+}
+// DeckFreshness.ageText: "just now", "5 min ago", "2 hr ago", "3 days ago".
+function ago(t, now) {
+  const s = (now - t) / 1e3;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} hr ago`;
+  const d = Math.floor(s / 86400);
+  return d === 1 ? '1 day ago' : `${d} days ago`;
+}
+const pctNum = (w) => (w && w.remaining != null && w.state !== 'idle' ? Math.round(w.remaining) : null);
+const pctText = (w) => (w?.spendText ? w.spendText : pctNum(w) == null ? '—' : `${pctNum(w)}% left`);
+const usedW = (w) => (w && w.remaining != null && w.state !== 'idle' ? clamp(100 - w.remaining, 0, 100) : 0);
+const sevOf = (w) => (w ? w.severity : 'unknown');
+
+// Collapsed-card reset text (the Mac's resetText, with the PT label).
+function resetShort(w, now) {
+  if (!w) return '';
+  if (w.state === 'idle') return esc(w.idleText);
+  if (w.state === 'unanchored') return 'Starts on first use';
+  const r = ms(w.resetsAt);
+  if (r == null) return '';
+  if (r <= now) return 'Resetting now';
+  if (r - now < DAY) return `Resets in ${span(r - now)}`;
+  return `Resets ${whenPT(r, now)}`;
+}
+// Expanded reset text: absolute time and countdown together.
+function resetLong(w, now) {
+  if (w.state === 'idle') return esc(w.idleText);
+  if (w.state === 'unanchored') return 'Starts on first use';
+  const r = ms(w.resetsAt);
+  if (r == null) return '';
+  let s = r <= now ? 'Resetting now' : `Resets ${whenPT(r, now)} · in ${span(r - now)}`;
+  if (w.state === 'rolled' && w.rolledAt) {
+    const noun = r - ms(w.rolledAt) >= 6 * DAY ? 'Week' : 'Window';
+    s += ` · ${noun} reset at ${F.time.format(new Date(ms(w.rolledAt)))} PT`;
+  }
+  return s;
+}
+
+function mark(p, size) {
+  const P = PROVIDERS[p];
+  if (P?.mark) return `<img class="pm" src="${P.mark}" width="${size}" height="${size}" alt="">`;
+  return `<span class="pm pm-fallback" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .5)}px" aria-hidden="true">${esc((P?.name || p).charAt(0))}</span>`;
+}
+const read = (d) => d.accounts.filter((a) => a.reads);
+const byProvider = (list) => ORDER.map((p) => [p, list.filter((a) => a.provider === p)]).filter(([, l]) => l.length);
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+// ---------- shared chrome ----------
+function header(d, now) {
+  const gen = ms(d.generatedAt);
+  const srcs = d.sources.map((s) => `<span class="src ${s.reachable ? '' : 'off'}">${esc(s.name)}</span>`).join('');
+  return `<header class="top"><div class="brand">${MARK_SVG}<span>ModelDeck</span></div>
+    <div class="fresh"><b>Updated ${ago(gen, now)}</b><br><span class="srcs">${srcs}</span></div></header>${banner(d, now)}`;
+}
+function banner(d, now) {
+  const down = d.sources.filter((s) => !s.reachable);
+  if (!down.length) return '';
+  return down.map((s) => {
+    const last = s.readAt ? `Showing its last numbers, from ${ago(ms(s.readAt), now)}.` : 'Its accounts show only what the other Mac has.';
+    return `<div class="banner"><b>${esc(s.name)} isn’t answering</b> (${esc(s.note || 'offline')}). ${last}</div>`;
+  }).join('');
+}
+const footer = () => `<p class="foot">Read-only. Numbers come from ModelDeck on the M5 and the M1 over your tailnet.<br>This page checks again every minute.</p>`;
+
+// Sparkline of the all-models weekly across its whole window, with the
+// even-pace line from 100% at the window start to 0% at its reset.
+function spark(a, now) {
+  const h = a.history;
+  if (!h || !h.points || h.points.length < 3) return '';
+  const t0 = ms(h.start), t1 = ms(h.end);
+  const W = 300, H = 76;
+  const X = (t) => ((clamp(t, t0, t1) - t0) / (t1 - t0)) * W;
+  const Y = (r) => (1 - clamp(r, 0, 100) / 100) * H;
+  const pts = h.points.map(([t, r]) => [X(ms(t)), Y(r)]);
+  const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  const last = pts[pts.length - 1];
+  const area = `${line}L${last[0].toFixed(1)},${H}L${pts[0][0].toFixed(1)},${H}Z`;
+  const lastR = h.points[h.points.length - 1][1];
+  const pace = 100 * clamp((t1 - now) / (t1 - t0), 0, 1);
+  const delta = lastR - pace;
+  const verdict = delta >= 5 ? 'Using it slower than an even pace' : delta <= -5 ? 'Using it faster than an even pace' : 'Right about on an even pace';
+  return `<div class="spark"><div class="spark-h"><b>This week</b><span>${esc(h.title)}</span></div>
+    <div class="spark-p"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(h.title)} over the current week">
+      <line class="grid" x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}"/>
+      <path class="area" d="${area}"/><path class="line" d="${line}"/>
+      <line class="pace" x1="0" y1="0" x2="${W}" y2="${H}"/>
+    </svg><span class="spark-dot" style="left:${(last[0] / W * 100).toFixed(2)}%;top:${(last[1] / H * 100).toFixed(2)}%"></span></div>
+    <div class="spark-f"><span>Started ${F.md.format(new Date(t0))}, ${F.time.format(new Date(t0))}</span><span>Resets ${whenPT(t1, now)}</span></div>
+    <div class="spark-k"><i></i>${verdict}</div></div>`;
+}
+
+function metaChips(a, now) {
+  const chips = [];
+  const newest = ms(a.newestObservedAt);
+  if (newest) chips.push(`<span class="chipm">From ${esc(a.feeds.join(' + '))} · ${ago(newest, now)}</span>`);
+  if (a.renewedAt) chips.push(`<span class="chipm">Sign-in renewed ${whenPT(ms(a.renewedAt), now)}</span>`);
+  for (const m of a.machines || []) if (m.signIn !== 'ok') chips.push(`<span class="chipm warn">${esc(m.name)}: ${esc(m.text)}</span>`);
+  return `<div class="meta">${chips.join('')}</div>`;
+}
+
+// ---------- A · Deck: the Mac popover, one card per account ----------
+function nextResetKey(a) {
+  if (!a.reads) return Infinity;
+  const w = a.windows[a.headline];
+  const r = w && w.state !== 'unanchored' ? ms(w.resetsAt) : null;
+  return r ?? Infinity;
+}
+function renderA(d, now, width) {
+  const groups = byProvider(d.accounts).map(([p, list]) => [p, list.slice().sort((x, y) =>
+    (x.reads === y.reads ? 0 : x.reads ? -1 : 1) || (nextResetKey(x) - nextResetKey(y)) || x.label.localeCompare(y.label))]);
+  const cols = width >= 1100 ? 3 : width >= 740 ? 2 : 1;
+  const buckets = cols === 3 ? [['claude'], ['codex'], ['grok', 'antigravity']]
+    : cols === 2 ? [['claude'], ['codex', 'grok', 'antigravity']] : [ORDER];
+  const body = buckets.map((ps) => `<div class="colA">${groups.filter(([p]) => ps.includes(p)).map(([p, l]) => groupA(p, l, now)).join('')}</div>`).join('');
+  return `${header(d, now)}<div class="deckA cols-${cols}">${body}</div>${footer()}`;
+}
+function groupA(p, list, now) {
+  return `<section class="grp"><div class="ghead">${mark(p, 26)}<h2>${PROVIDERS[p]?.name || esc(p)}</h2><span class="count">${plural(list.length, 'account')}</span></div>
+    ${list.map((a) => (a.reads ? cardA(a, now) : unreadA(a))).join('')}</section>`;
+}
+// The M5 pool's routing weight, as on the Mac deck: a number in the pool, a bare fork outside it.
+const FORK = '<svg width="10" height="11" viewBox="0 0 10 11" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M2 1v3.5c0 1.5 3 2 3 3.5V10M8 1v3.5c0 1.5-3 2-3 3.5"/></svg>';
+function weightTag(a) {
+  if (a.weight === undefined) return '';
+  const label = a.weight == null ? 'Outside the proxy pool' : `Routing weight ${a.weight}`;
+  return `<span class="wt" title="${label}" aria-label="${label}">${FORK}${a.weight == null ? '' : ` ${a.weight}`}</span>`;
+}
+function cardA(a, now) {
+  const w = a.windows[a.headline];
+  const sev = sevOf(w);
+  const isOpen = OPEN.has(a.id);
+  let notice = '';
+  if (a.signIn) notice = `<div class="notice warn">${esc(a.signIn.text)}</div>`;
+  else if (a.stale) notice = `<div class="notice">Data from ${ago(ms(a.newestObservedAt), now)}</div>`;
+  const newest = ms(a.newestObservedAt);
+  const rows = a.windows.map((x) => {
+    const age = ms(x.observedAt);
+    const older = newest && age && newest - age > 10 * MIN ? ` · <span class="age">read ${ago(age, now)}</span>` : '';
+    return `<div class="win s-${x.severity}"><div class="w1"><span class="t">${esc(x.title)}</span><span class="pct">${esc(pctText(x))}</span></div>
+      <div class="bar"><i style="width:${usedW(x)}%"></i></div><div class="w2">${resetLong(x, now)}${older}</div></div>`;
+  }).join('');
+  return `<article class="card ${isOpen ? 'open' : ''}" data-toggle="${a.id}" role="button" tabindex="0" aria-expanded="${isOpen}">
+    <div class="r1"><span class="name">${esc(a.label)}</span>${a.plan ? `<span class="plan">· ${esc(a.plan)}</span>` : ''}${weightTag(a)}<span class="pct s-${sev}">${esc(pctText(w))}</span></div>
+    <div class="fold sum"><div><div class="r2"><span>${esc(w?.title || 'No usage reported')}</span><span>${resetShort(w, now)}</span></div>
+      <div class="bar s-${sev}"><i style="width:${usedW(w)}%"></i></div></div></div>
+    ${notice}
+    <div class="fold more"><div>${rows}${spark(a, now)}${metaChips(a, now)}</div></div>
+  </article>`;
+}
+function unreadA(a) {
+  return `<article class="card unread"><div class="r1"><span class="name">${esc(a.label)}</span></div>
+    <div class="r2"><span>${esc(a.note.split('. ')[0])}.</span></div>
+    <div class="bar empty" style="margin-top:10px"></div>
+    <div class="notice">Usage isn’t read yet</div></article>`;
+}
+
+// ---------- B · Where's room? ranked by usable headroom ----------
+// Room = the tighter of the windows that gate all use (5-hour and the
+// all-models weekly). Model weeklies (Fable) gate only their model.
+function roomOf(a) {
+  const ws = a.windows.filter((w) => !w.spend && w.remaining != null && w.state !== 'idle');
+  let gating = ws.filter((w) => w.rank <= 1);
+  if (!gating.length) gating = ws;
+  if (!gating.length) return null;
+  const lim = gating.reduce((m, w) => (w.remaining < m.remaining
+    || (w.remaining === m.remaining && (ms(w.resetsAt) ?? Infinity) < (ms(m.resetsAt) ?? Infinity)) ? w : m));
+  return { pct: Math.round(lim.remaining), lim, gating, models: ws.filter((w) => w.rank === 2) };
+}
+// A reading older than 12 hours can't rank as room you have now.
+const tooOld = (a, now) => !a.newestObservedAt || now - ms(a.newestObservedAt) > 12 * HOUR;
+function ring(pct, size, stroke, sev, extra = '') {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, f = clamp(pct / 100, 0, 1);
+  return `<div class="ringbox s-${sev}" style="width:${size}px;height:${size}px"><svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+    <circle class="trk" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"/>
+    <circle class="val" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}" stroke-dasharray="${(c * f).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
+    </svg><div class="in">${extra}</div></div>`;
+}
+const shortTitle = (t) => (t === '5-hour limit' ? '5-hour' : t.replace('Weekly · all models', 'Weekly').replace('Weekly · ', ''));
+function limLine(w, now) {
+  const r = ms(w.resetsAt);
+  const when = w.state === 'unanchored' ? 'starts on first use' : r && r > now ? (r - now < DAY ? `back in ${span(r - now)}` : `resets ${whenPT(r, now)}`) : '';
+  return `Tightest: ${esc(shortTitle(w.title))}${when ? `, ${when}` : ''}`;
+}
+function paceLine(a, now, compact) {
+  const f = a.forecast;
+  if (!f) return '';
+  const t = whenPT(ms(f.dryAt), now);
+  if (compact) return `At this pace, ${esc(shortTitle(f.title))} runs out ~${t}`;
+  return `<div class="pace">At this pace, ${esc(f.title)} runs out around ${t}, before it resets.<small>${esc(f.label)} · ${esc(f.basis || 'recent pace')}</small></div>`;
+}
+function renderB(d, now) {
+  const accts = read(d);
+  // Next resets that give room back (at least 5% of a window comes back).
+  const resets = [];
+  for (const a of accts) for (const w of a.windows) {
+    const r = ms(w.resetsAt);
+    if (w.spend || w.state !== 'anchored' || !r || r <= now || w.remaining == null || w.remaining > 95) continue;
+    resets.push({ a, w, r });
+  }
+  resets.sort((x, y) => x.r - y.r);
+  const chips = resets.slice(0, 10).map(({ a, w, r }) => {
+    const cd = span(r - now).split(' ');
+    const cdHtml = cd.map((p, i) => (i % 2 ? `<small>${p}</small>` : p)).join(' ');
+    return `<div class="rchip s-${w.severity}"><div class="cd">${cdHtml}</div>
+      <div class="who">${mark(a.provider, 16)}<span>${esc(a.label)}</span></div>
+      <div class="what">${esc(w.title)}</div><div class="what">${whenPT(r, now)}</div>
+      <span class="frees">+${Math.round(100 - w.remaining)}% back</span></div>`;
+  }).join('');
+
+  const boards = ['claude', 'codex'].map((p) => {
+    const list = accts.filter((a) => a.provider === p).map((a) => ({ a, room: tooOld(a, now) ? null : roomOf(a) }));
+    if (!list.length) return '';
+    const ranked = list.filter((x) => x.room).sort((x, y) => (y.room.pct - x.room.pct) || x.a.label.localeCompare(y.a.label));
+    const usable = ranked.filter((x) => x.room.pct > 10);
+    const out = ranked.filter((x) => x.room.pct <= 10);
+    const unknown = list.filter((x) => !x.room);
+    const pick = usable[0];
+    let html = `<section><div class="board-h">${mark(p, 26)}<h2>${PROVIDERS[p].name}</h2><span>${plural(list.length, 'account')}, most room first</span></div>`;
+    if (pick) html += pickCard(pick, p, now);
+    const rest = usable.slice(1);
+    if (rest.length) html += `<ol class="ranks">${rest.map((x) => rankRow(x, now)).join('')}</ol>`;
+    if (out.length) html += `<div class="sub-h">Out of room for now</div><ol class="ranks">${out.map((x) => rankRow(x, now, true)).join('')}</ol>`;
+    if (unknown.length) html += `<div class="sub-h">No current reading</div><ol class="ranks">${unknown.map(({ a }) => `<li class="rk"><div class="rk-b"><div class="rk-n">${esc(a.label)}</div><div class="rk-s">${tooOld(a, now) ? `Data from ${ago(ms(a.newestObservedAt), now)}` : a.windows.length ? 'Its windows reset since the last reading' : 'No usage reported yet'}</div></div></li>`).join('')}</ol>`;
+    return html + '</section>';
+  }).join('');
+
+  const unread = d.accounts.filter((a) => !a.reads);
+  const unreadHtml = unread.length ? `<div class="sec-h"><h3>Not read yet</h3><span>In the M1 proxy pool</span></div><div class="unreadB">${unread.map((a) =>
+    `<div class="ur">${mark(a.provider, 30)}<div><b>${esc(a.label)}</b><span>Signed in to the pool · usage isn’t read yet</span></div></div>`).join('')}</div>` : '';
+
+  const best = ['claude', 'codex'].map((p) => accts.filter((a) => a.provider === p && !tooOld(a, now)).map((a) => ({ a, room: roomOf(a) })).filter((x) => x.room)
+    .sort((x, y) => y.room.pct - x.room.pct)[0]).filter(Boolean);
+  const sub = best.length ? best.map(({ a, room }) => `${PROVIDERS[a.provider].name}: <b>${esc(a.label)}</b> ${room.pct}%`).join(' · ') : '';
+  return `${header(d, now)}<h1 class="h-title">Where’s room?</h1><p class="h-sub">${sub}</p>
+    ${chips ? `<div class="sec-h"><h3>Next resets</h3><span>Room coming back</span></div><div class="chips">${chips}</div>` : ''}
+    <div class="boards">${boards}</div>${unreadHtml}
+    <p class="foot">Room is the tighter of each account’s 5-hour limit and its all-models weekly. Fable has its own weekly, shown beside it.</p>${footer()}`;
+}
+function pickCard({ a, room }, p, now) {
+  const sev = room.lim.severity;
+  const all = [...room.gating, ...room.models].sort((x, y) => x.rank - y.rank);
+  const lims = all.map((w) => {
+    const r = ms(w.resetsAt);
+    const when = w.state === 'unanchored' ? 'Starts on first use' : r && r > now ? `${r - now < DAY ? 'in ' + span(r - now) : whenPT(r, now)}` : '';
+    return `<div class="lim s-${w.severity}"><span>${esc(w.title)}</span><span class="pct">${pctNum(w)}%</span><div class="bar"><i style="width:${clamp(w.remaining, 0, 100)}%"></i></div>${when ? `<span class="when">${when}</span>` : ''}</div>`;
+  }).join('');
+  const stale = a.stale ? `<div class="pace" style="color:var(--ink-3)">Data from ${ago(ms(a.newestObservedAt), now)}</div>` : '';
+  return `<article class="pick s-${sev}"><div class="pick-top"><div class="eyebrow">Best ${PROVIDERS[p].name} account right now</div>
+    <div class="pick-n">${esc(a.label)}${a.plan ? `<span class="plan">${esc(a.plan)}</span>` : ''}</div></div>
+    <div class="pick-row">${ring(room.pct, 116, 11, sev, `<div class="big">${room.pct}<small>%</small></div><div class="lbl">room</div>`)}
+    <div class="pick-b"><div class="lims">${lims}</div></div></div>${paceLine(a, now)}${stale}</article>`;
+}
+function rankRow({ a, room }, now, out) {
+  const sev = room.lim.severity;
+  const minis = [...room.gating, ...room.models].sort((x, y) => x.rank - y.rank).slice(0, 3).map((w) =>
+    `<div class="mini s-${w.severity}"><span>${w.rank === 0 ? '5h' : w.rank === 1 ? 'Wk' : esc(shortTitle(w.title).charAt(0))}</span><div class="bar"><i style="width:${clamp(w.remaining, 0, 100)}%"></i></div></div>`).join('');
+  const pace = paceLine(a, now, true);
+  let sub = limLine(room.lim, now);
+  let cls = '';
+  if (a.signIn) { sub = esc(a.signIn.text); cls = 'warn'; } else if (a.stale) { sub = `Data from ${ago(ms(a.newestObservedAt), now)}`; } else if (pace && !out) { sub = pace; cls = 'warn'; }
+  return `<li class="rk ${out ? 'out' : ''}">${ring(room.pct, 46, 5, sev, `${room.pct}`)}
+    <div class="rk-b"><div class="rk-n">${esc(a.label)}${a.plan ? `<span class="plan">${esc(a.plan)}</span>` : ''}</div><div class="rk-s ${cls}">${sub}</div></div>
+    <div class="minis">${minis}</div></li>`;
+}
+
+// ---------- C · Grid: accounts x windows heat map ----------
+function renderC(d, now, width) {
+  const accts = read(d);
+  const titles = [];
+  for (const a of accts) for (const w of a.windows) if (!titles.some((t) => t.title === w.title)) titles.push({ title: w.title, rank: w.rank });
+  titles.sort((x, y) => (x.rank - y.rank) || x.title.localeCompare(y.title));
+  const cols = titles.map((t) => t.title);
+  const wide = width >= 760;
+  const head = cols.map((t) => {
+    const [a, b] = t.includes(' · ') ? t.split(' · ') : t === '5-hour limit' ? ['5-hour', 'limit'] : [t, ''];
+    return `<div class="hh">${esc(a)}<small>${esc(b) || '&nbsp;'}</small></div>`;
+  }).join('');
+  let rows = '';
+  for (const [p, list] of byProvider(d.accounts)) {
+    rows += `<div class="gr first">${mark(p, 18)}${PROVIDERS[p]?.name || esc(p)}</div>`;
+    for (const a of list.slice().sort((x, y) => x.label.localeCompare(y.label))) {
+      const sub = !a.reads ? 'Proxy pool' : a.signIn ? `<span class="flag">${esc(a.signIn.text)}</span>` : a.stale ? `<span class="flag">Data from ${ago(ms(a.newestObservedAt), now)}</span>` : esc(a.plan || '');
+      rows += `<div class="an first"><b>${esc(a.label)}</b><span>${sub}</span></div>`;
+      if (!a.reads) { rows += `<div class="span-ur">Signed in to the pool · usage isn’t read yet</div>`; continue; }
+      cols.forEach((t, ci) => {
+        const w = a.windows.find((x) => x.title === t);
+        rows += cellC(a, w, ci, now, wide);
+      });
+    }
+  }
+  const legend = `<div class="legend"><span>Fill shows how much is used</span><span class="sw">${[.12, .28, .44].map((x) => `<i style="background:color-mix(in oklab, var(--ok) ${x * 100}%, var(--card))"></i>`).join('')}</span>
+    <span class="sw"><i style="background:color-mix(in oklab, var(--warn) 62%, var(--card))"></i></span><span>25% left or less</span>
+    <span class="sw"><i style="background:color-mix(in oklab, var(--crit) 80%, var(--card))"></i></span><span>10% or less</span></div>`;
+  return `${header(d, now)}${timelineC(accts, now)}
+    <div class="sec-h"><h3>Every window</h3><span>Tap a cell for its reset</span></div>
+    <div class="gridwrap"><div class="heat" style="--cols:${cols.length}"><div class="hh first">Account<small>&nbsp;</small></div>${head}${rows}</div></div>${legend}${footer()}`;
+}
+function heatAlpha(w) {
+  const used = usedW(w) / 100;
+  if (w.severity === 'critical') return 0.7 + used * 0.15;
+  if (w.severity === 'warning') return 0.5 + used * 0.15;
+  return 0.07 + used * 0.5;
+}
+function cellC(a, w, ci, now, wide) {
+  if (!w) return `<div class="cell na"><span class="v">—</span></div>`;
+  if (w.state === 'idle') return `<button class="cell idle" data-cell="${a.id}|${ci}"><span class="v">Reset</span><span class="r">since read</span></button>`;
+  const r = ms(w.resetsAt);
+  const alpha = heatAlpha(w);
+  const cd = w.state === 'unanchored' ? 'first use' : r && r > now ? (wide ? `in ${span(r - now)}` : span(r - now)) : '';
+  const abs = w.state === 'anchored' && r && r > now ? whenPT(r, now) : '';
+  const v = w.spendText ? `<span class="v" style="font-size:13px">${esc(w.spendText)}</span>` : `<span class="v">${pctNum(w)}<small>%</small></span>`;
+  return `<button class="cell s-${w.severity} ${alpha > .46 ? 'hot' : ''}" style="--a:${alpha.toFixed(3)}" data-cell="${a.id}|${ci}" aria-label="${esc(a.label)}, ${esc(w.title)}, ${esc(pctText(w))}">
+    ${v}<span class="rr"><span class="r">${cd}</span><span class="r2c">${abs}</span></span></button>`;
+}
+// Piecewise time axis: the next 24 hours get 40% of the width, days 2-7 the rest.
+const tlX = (h) => (h <= 24 ? (h / 24) * 40 : 40 + ((Math.min(h, 168) - 24) / 144) * 60);
+function timelineC(accts, now) {
+  const items = [];
+  for (const a of accts) for (const w of a.windows) {
+    const r = ms(w.resetsAt);
+    if (w.spend || w.state !== 'anchored' || !r || r <= now || r - now > 7 * DAY || w.remaining == null || w.remaining >= 99) continue;
+    items.push({ a, w, r, x: tlX((r - now) / HOUR), key: `${a.id}|${w.title}` });
+  }
+  items.sort((x, y) => x.r - y.r);
+  // Stack markers that would touch.
+  const lanes = [];
+  for (const it of items) {
+    let lane = lanes.findIndex((lx) => it.x - lx > 3.2);
+    if (lane < 0) { lane = lanes.length; lanes.push(-99); }
+    if (lane > 3) lane = 3;
+    lanes[lane] = it.x; it.lane = lane;
+  }
+  if (!TL_PICK || !items.some((it) => it.key === TL_PICK)) TL_PICK = items[0]?.key || null;
+  const ticks = [`<span class="tick now" style="left:0">Now</span>`];
+  for (const h of [6, 12, 18]) ticks.push(`<span class="tick" style="left:${tlX(h)}%">${h} h</span>`);
+  // PT midnights after the first 24 hours, labeled by weekday.
+  for (let i = 1; i <= 8; i++) {
+    const t = nextMidnightPT(now, i);
+    const h = (t - now) / HOUR;
+    if (h <= 26 || h > 168) continue;
+    ticks.push(`<span class="tick" style="left:${tlX(h)}%">${F.wd.format(new Date(t + HOUR))}</span>`);
+  }
+  const marks = items.map((it) => {
+    const used = 100 - it.w.remaining;
+    const size = Math.round(9 + used / 100 * 9);
+    const col = it.a.color || PROVIDERS[it.a.provider]?.color || '#8e9097';
+    return `<button class="mk ${it.key === TL_PICK ? 'on' : ''}" data-mk="${esc(it.key)}" style="left:${it.x}%;bottom:${26 + 13 + it.lane * 15}px;width:${size}px;height:${size}px;--c:${col}" aria-label="${esc(it.a.label)} ${esc(it.w.title)} resets ${whenPT(it.r, now)}"></button>`;
+  }).join('');
+  const pick = items.find((it) => it.key === TL_PICK);
+  const detail = pick ? `<div class="tl-d s-${pick.w.severity}"><span class="cd">${span(pick.r - now)}</span>
+      <span class="tx"><b>${esc(pick.a.label)}</b> · ${esc(pick.w.title)}<br>Resets ${whenPT(pick.r, now)}</span>
+      <span class="frees">+${Math.round(100 - pick.w.remaining)}% back</span></div>` : `<div class="tl-d"><span class="tx">No resets with usage behind them in the next 7 days.</span></div>`;
+  return `<div class="sec-h" style="margin-top:14px"><h3>Next resets</h3><span>Next 7 days, Pacific</span></div>
+    <div class="tl"><div class="tl-track"><div class="tl-axis"></div><div class="tl-day" style="width:${tlX(24)}%"></div>${ticks.join('')}${marks}</div>${detail}</div>`;
+}
+// The epoch ms of the i-th Pacific midnight after now.
+function nextMidnightPT(now, i) {
+  const parts = F.hm.formatToParts(new Date(now));
+  const hh = Number(parts.find((p) => p.type === 'hour').value) % 24;
+  const mm = Number(parts.find((p) => p.type === 'minute').value);
+  const sinceMidnight = (hh * 60 + mm) * MIN;
+  return now - sinceMidnight + i * DAY; // DST drift of an hour is fine for tick placement
+}
+function sheetC(d, key, now) {
+  const [id, ci] = key.split('|');
+  const a = d.accounts.find((x) => x.id === id);
+  if (!a) return '';
+  const titles = [];
+  for (const x of read(d)) for (const w of x.windows) if (!titles.some((t) => t.title === w.title)) titles.push({ title: w.title, rank: w.rank });
+  titles.sort((x, y) => (x.rank - y.rank) || x.title.localeCompare(y.title));
+  const w = a.windows.find((x) => x.title === titles[Number(ci)]?.title);
+  if (!w) return '';
+  const r = ms(w.resetsAt);
+  const obs = ms(w.observedAt);
+  const rows = [];
+  if (w.state === 'idle') rows.push(['Window', esc(w.idleText)]);
+  else if (w.state === 'unanchored') rows.push(['Resets', 'Starts on first use']);
+  else if (r) rows.push(['Resets', `${whenPT(r, now)}<br><span style="color:var(--ink-3)">in ${span(Math.max(MIN, r - now))}</span>`]);
+  if (w.remaining != null && w.state !== 'idle') rows.push(['Used', `${Math.round(100 - w.remaining)}%`]);
+  if (obs) rows.push(['Read', `${ago(obs, now)} from ${esc(w.source)}`]);
+  if (a.signIn) rows.push(['Sign-in', `<span style="color:var(--warn-ink)">${esc(a.signIn.text)}</span>`]);
+  const showSpark = w.rank === 1 && a.history;
+  return `<div class="grab"></div><div class="sh-h">${mark(a.provider, 28)}<div><b>${esc(a.label)}</b><br><span>${esc(w.title)}</span></div><button class="sh-x" data-close aria-label="Close">✕</button></div>
+    <div class="sh-v s-${w.severity}"><span class="big">${pctNum(w) ?? '—'}<small>%</small></span><span>left</span></div>
+    <div class="bar s-${w.severity}"><i style="width:${usedW(w)}%"></i></div>
+    <div class="sh-l">${rows.map(([k, v]) => `<div><span>${k}</span><span>${v}</span></div>`).join('')}</div>${showSpark ? spark(a, now) : ''}`;
+}
+
+// ---------- boot (browser only) ----------
+const OPEN = new Set();
+let TL_PICK = null;
+if (typeof document !== 'undefined') {
+  const app = document.getElementById('app');
+  const sheet = document.getElementById('sheet');
+  const shade = document.getElementById('shade');
+  const switcher = document.getElementById('switcher');
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+  let DECK = null, failed = false, sheetKey = null;
+  // ?variant= picks the view when it names one, then leaves the address so a
+  // home-screen icon or bookmark can't pin it; otherwise this device's last view.
+  const url = new URL(location.href);
+  const asked = (url.searchParams.get('variant') || '').toUpperCase();
+  let saved = null;
+  try { saved = localStorage.getItem(VIEW_KEY); } catch { /* storage blocked: start on A */ }
+  let vi = Math.max(0, VARIANTS.indexOf(VARIANTS.includes(asked) ? asked : saved));
+  if (url.searchParams.has('variant')) { url.searchParams.delete('variant'); history.replaceState(null, '', url); }
+  const remember = () => { try { localStorage.setItem(VIEW_KEY, VARIANTS[vi]); } catch { /* storage blocked */ } };
+
+  const render = () => {
+    if (!DECK) return;
+    const now = Date.now(), width = window.innerWidth, v = VARIANTS[vi];
+    app.innerHTML = v === 'A' ? renderA(DECK, now, width) : v === 'B' ? renderB(DECK, now) : renderC(DECK, now, width);
+    // Under the header row, where the iPad's switch can't cover it.
+    if (failed) app.querySelector('.top').insertAdjacentHTML('afterend', '<div class="banner"><b>Can’t reach the M1 right now.</b> Showing the last numbers this page loaded.</div>');
+    if (sheetKey) sheet.innerHTML = sheetC(DECK, sheetKey, now);
+  };
+  const load = async () => {
+    try {
+      const res = await fetch('/api/deck', { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      DECK = await res.json(); failed = false;
+    } catch { failed = true; }
+    render();
+  };
+  // Light the current view's button; the selection sits under it via --i.
+  const paintSwitch = () => {
+    switcher.style.setProperty('--i', vi);
+    for (const b of switcher.querySelectorAll('[data-view]')) {
+      if (Number(b.dataset.view) === vi) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    }
+  };
+  // Move to view i: remember it, then slide the selection and the page toward it.
+  const show = (i) => {
+    const from = vi;
+    vi = i; remember(); paintSwitch();
+    closeSheet(); render(); window.scrollTo({ top: 0 });
+    if (i === from || REDUCED.matches) return;
+    switcher.querySelector('.sw-sel').animate([{ transform: `translateX(${from * 100}%)` }, { transform: `translateX(${i * 100}%)` }],
+      { duration: 380, easing: 'cubic-bezier(.3, 1.25, .5, 1)' });
+    app.animate([{ opacity: 0, transform: `translateX(${i > from ? 16 : -16}px)` }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  };
+  const openSheet = (key) => { sheetKey = key; sheet.innerHTML = sheetC(DECK, key, Date.now()); sheet.classList.add('on'); shade.classList.add('on'); };
+  const closeSheet = () => { sheetKey = null; sheet.classList.remove('on'); shade.classList.remove('on'); };
+
+  switcher.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-view]'); if (b) show(Number(b.dataset.view));
+  });
+  // Swipe sideways to the next or previous view. Touches that start on
+  // something that moves sideways itself (B's reset strip, C's timeline and
+  // grid), on the switch, near a screen edge, while zoomed in, or with C's
+  // sheet open are left alone.
+  let swipe = null;
+  document.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    swipe = e.touches.length === 1 && !sheetKey && (window.visualViewport?.scale ?? 1) < 1.05
+      && t.clientX > 24 && t.clientX < window.innerWidth - 24 && !e.target.closest('.chips, .tl, .gridwrap, .switcher')
+      ? { x: t.clientX, y: t.clientY, at: e.timeStamp } : null;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!swipe) return;
+    const t = e.changedTouches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+    const quick = e.timeStamp - swipe.at < 600;
+    swipe = null;
+    const i = vi + (dx < 0 ? 1 : -1);
+    if (quick && Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && i >= 0 && i < VARIANTS.length) show(i);
+  }, { passive: true });
+  document.addEventListener('touchcancel', () => { swipe = null; });
+  app.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-toggle]');
+    if (card) {
+      const id = card.dataset.toggle;
+      const on = !OPEN.has(id);
+      on ? OPEN.add(id) : OPEN.delete(id);
+      card.classList.toggle('open', on); card.setAttribute('aria-expanded', String(on));
+      return;
+    }
+    const cell = e.target.closest('[data-cell]');
+    if (cell) return openSheet(cell.dataset.cell);
+    const mk = e.target.closest('[data-mk]');
+    if (mk) { TL_PICK = mk.dataset.mk; render(); }
+  });
+  app.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-toggle]')) { e.preventDefault(); e.target.click(); }
+  });
+  shade.addEventListener('click', closeSheet);
+  sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSheet();
+    if (e.target.closest && e.target.closest('input, textarea')) return;
+    if (e.key === 'ArrowLeft') show((vi + VARIANTS.length - 1) % VARIANTS.length);
+    if (e.key === 'ArrowRight') show((vi + 1) % VARIANTS.length);
+  });
+  let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(render, 150); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
+  setInterval(load, 60e3);   // fresh numbers every minute
+  setInterval(render, 30e3); // countdowns and ages tick between loads
+  remember(); paintSwitch(); load();
+}
+</script>
+</body>
+</html>

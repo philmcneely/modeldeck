@@ -40,10 +40,17 @@ function finiteNumber(value) {
   return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : null;
 }
 
-function oauthAccess(credentials) {
+function storedOauth(credentials) {
   const oauth = credentials?.claudeAiOauth ?? credentials?.oauth ?? credentials;
   const token = oauth?.accessToken ?? oauth?.access_token;
-  if (typeof token !== 'string' || !token) throw new Error('stored OAuth credentials are unavailable; sign in explicitly before refreshing');
+  // A token that is not header-safe ASCII is unusable, and the runtime's
+  // header validation would echo it into the error text (#767 review).
+  return { oauth, token: typeof token === 'string' && /^[\x21-\x7e]+$/.test(token) ? token : null };
+}
+
+function oauthAccess(credentials) {
+  const { oauth, token } = storedOauth(credentials);
+  if (!token) throw new Error('stored OAuth credentials are unavailable; sign in explicitly before refreshing');
   const rawExpiresAt = finiteNumber(oauth?.expiresAt ?? oauth?.expires_at);
   const expiresAt = rawExpiresAt && rawExpiresAt < 10_000_000_000 ? rawExpiresAt * 1000 : rawExpiresAt;
   if (expiresAt && expiresAt <= Date.now()) throw new Error('stored OAuth credentials have expired; sign in explicitly before refreshing');
@@ -60,7 +67,12 @@ export async function readClaudeCredentials({
 } = {}) {
   if (!profile) throw new Error('CLAUDE_CONFIG_DIR is required');
   try {
-    return JSON.parse(await readFile(path.join(profile, '.credentials.json'), 'utf8'));
+    const fromFile = JSON.parse(await readFile(path.join(profile, '.credentials.json'), 'utf8'));
+    // Claude Code can leave a file holding only other secrets (an MCP
+    // connector's `mcpOAuth`) beside the real Keychain login. On macOS the
+    // file wins only when it carries the Claude login itself; otherwise it
+    // would shadow a fresh sign-in forever.
+    if (platform !== 'darwin' || storedOauth(fromFile).token) return fromFile;
   } catch (fileError) {
     if (platform !== 'darwin') {
       if (fileError instanceof SyntaxError) throw new Error('stored OAuth credentials are not valid JSON');

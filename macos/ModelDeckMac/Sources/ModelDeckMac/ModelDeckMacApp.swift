@@ -105,10 +105,12 @@ struct ModelDeckMacApp: App {
         // Issue #677: the same client runs the deferred Codex profile move on
         // demand, so the header line's "Move now" is a real action rather
         // than a description of one.
+        // Issue #771: the cards' "This week" graphs read the same client.
         let deckModel = DeckPopoverModel(
             activator: client,
             stateProvider: client,
-            codexMigrator: client
+            codexMigrator: client,
+            historyProvider: client
         )
         deckModel.onVerifiedState = { [weak statusModel] state in
             statusModel?.apply(deckState: state)

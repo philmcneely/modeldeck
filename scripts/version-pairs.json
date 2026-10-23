@@ -1,15 +1,15 @@
 {
-  "verifiedOn": "2026-09-03",
+  "verifiedOn": "2026-10-22",
   "liveProxy": {
-    "version": "7.2.149",
+    "version": "8.0.38",
     "binaryPath": "~/bin/cliproxyapi",
     "launchdLabel": "com.cliproxyapi.server"
   },
-  "codexCli": "0.152.1",
-  "claudeCli": "2.1.259",
+  "codexCli": "0.159.0",
+  "claudeCli": "2.1.302",
   "stampedClaudeClient": {
-    "version": "2.1.258",
+    "version": "2.1.280",
     "minRequired": "2.1.251"
   },
-  "notes": "Pair verified in-session 2026-09-03: live proxy v7.2.149 (upstream's own fix in v7.2.148 bumped the stamped Claude client from 2.1.220 to 2.1.258 and registered claude-fable-5-1); Claude Code 2.1.259 ran a real Fable 5.1 session through the proxy on a Max account; Codex CLI 0.152.1 ran a real gpt-5.6-sol session through the proxy."
+  "notes": "Pair verified 2026-10-22 on the Linux agent box (tim-linux-agent), which runs proxy v8.0.38 with its own pool: Claude Code 2.1.302 ran Claude Haiku with a Bash tool call, Codex CLI 0.159.0 ran exec with a shell call, and xAI (grok-3-mini, grok-4.3, streaming) and Antigravity Gemini answered, with no errors in the proxy log. v8.0.38 stamps Claude client 2.1.280, the same as v7.3.20. minRequired is the 2026-09-03 finding and was not re-measured. The M1 and M5 pools stay on v7.3.20 until the upgrade in docs/live-proxy-ops.md runs; re-record this tuple from the Mac after its verify step."
 }

@@ -54,6 +54,7 @@ function fixture(t, {
   write(source, 'docs/incidents/example.md');
   write(source, 'scripts/lane-codex.sh');
   write(source, 'scripts/lane-watch.mjs');
+  write(source, 'scripts/live-proxy-swap.sh');
   const laneScriptReference = ['..', 'scripts', 'lane-codex.sh'].join('/');
   const laneTestSource = `const sourceScript = new URL('${laneScriptReference}', import.meta.url);\n`;
   write(
@@ -115,6 +116,7 @@ test('strip list is absent from the committed mirror staging tree', (t) => {
     'docs/incidents',
     'scripts/lane-codex.sh',
     'scripts/lane-watch.mjs',
+    'scripts/live-proxy-swap.sh',
     'test/lane-codex-args.test.mjs',
     'design/mac-app-roadmap.md',
     'scripts/private-scrub-patterns',

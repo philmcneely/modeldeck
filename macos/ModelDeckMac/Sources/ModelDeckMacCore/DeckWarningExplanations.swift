@@ -43,6 +43,10 @@ public enum DeckWarningTopic: Hashable, Sendable {
     /// background update can be ignored but never invisible. Its popover
     /// (explanation + the Restart offer) rides the same one-at-a-time slot.
     case updateReady
+    /// The per-card "This week" graph (issue #771), opened from the card's
+    /// own "% left". Not a warning either; like the health chip it shares the
+    /// slot so one popover is up at a time.
+    case weeklyGraph
 }
 
 /// Identity of ONE clickable warning affordance: the topic plus the element

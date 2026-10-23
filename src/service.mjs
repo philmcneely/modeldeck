@@ -963,6 +963,7 @@ export class ModelDeckService {
     this.sharedTranscriptWarnings = new Map();
     this.sharedTranscriptTasks = new Map();
     this.sharedTranscriptCounts = new Map();
+    this.sharedTranscriptCountTasks = new Map();
     this.createClaudeProfile = options.createClaudeProfile || createClaudeProfileHome;
     // A numbered fresh home can be another add's base name. Reserve the
     // provider through creation and rollback so neither can adopt it early.
@@ -5347,12 +5348,25 @@ export class ModelDeckService {
 
   async accountSharedTranscriptState(account) {
     const cached = this.sharedTranscriptCounts.get(account.profileRef);
-    if (cached && this.now() - cached.at < 30_000) return cached.value;
-    const entry = {
-      at: this.now(),
-      value: sharedTranscriptState({ profilesDir: this.claudeProfilesDir, profileRef: account.profileRef }),
-    };
+    if (this.sharedTranscriptCountTasks.has(account.profileRef)
+        || (cached && this.now() - cached.at < 30_000)) return cached?.value || {};
+    // Conversation counts are optional enrichment. Keep status/sign-in reads
+    // responsive while one background scan refreshes the last completed count.
+    const entry = { at: 0, value: cached?.value || {} };
     this.sharedTranscriptCounts.set(account.profileRef, entry);
+    const pending = sharedTranscriptState({ profilesDir: this.claudeProfilesDir, profileRef: account.profileRef })
+      .then((value) => {
+        // Activation may have reconciled newer counts while this scan ran.
+        if (this.sharedTranscriptCounts.get(account.profileRef) === entry) {
+          entry.value = value;
+          entry.at = this.now();
+        }
+      }).finally(() => {
+        if (this.sharedTranscriptCountTasks.get(account.profileRef) === pending) {
+          this.sharedTranscriptCountTasks.delete(account.profileRef);
+        }
+      });
+    this.sharedTranscriptCountTasks.set(account.profileRef, pending);
     return entry.value;
   }
 

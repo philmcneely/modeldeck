@@ -338,6 +338,10 @@ test('TRIPWIRE proxy-rate-limit-bad-token — unauthorized or expired credential
     'unauthorized', 'Unauthorized', 'invalid_grant', 'invalid_token',
     'OAuth token has been revoked.', 'token_invalidated', 'token expired',
     'invalid bearer token', 'bad token', 'authentication_error',
+    // The exact wording upstream writes after a failed refresh: 7.3.20 and
+    // 8.x both use the first; 8.x adds the second for a dead refresh token
+    // (sdk/cliproxy/auth/conductor_refresh.go at v8.0.38).
+    'invalid grant (retrying)', 'unauthorized (refresh token invalid)',
   ]) {
     const entries = assertProxyAuthFilesShape({ files: [{ ...RATE_LIMITED_AUTH_FILE, status_message }] });
     assert.equal(proxyCredentialHealthOf(entries[0], HEALTH_NOW), 'error', status_message);

@@ -458,6 +458,50 @@ test('usage credential lookup keeps file fast path and Keychain failures secret'
   });
 });
 
+test('a credentials file holding only MCP logins does not shadow the Keychain sign-in on macOS', async () => {
+  // Field case 2026-10-21: Click AI's profile carried a `.credentials.json`
+  // with only `mcpOAuth`; every fresh sign-in landed in the Keychain and the
+  // deck still said "Sign in needed".
+  const mcpOnly = JSON.stringify({ mcpOAuth: { 'sentry|0123': { accessToken: 'mcp-token' } } });
+  let keychainCalls = 0;
+  const credentials = await readClaudeCredentials({
+    profile: '/profiles/selected',
+    platform: 'darwin',
+    homeDirectory: '/Users/fixture',
+    userInfo: () => ({ username: 'fixture-user' }),
+    readFile: async () => mcpOnly,
+    runSecurity: async () => { keychainCalls += 1; return { stdout: claudeCredentialsFixture }; },
+  });
+  assert.equal(credentials.account.email, 'user@example.invalid');
+  assert.equal(keychainCalls, 1);
+
+  const elsewhere = await readClaudeCredentials({
+    profile: '/profiles/selected',
+    platform: 'linux',
+    readFile: async () => mcpOnly,
+    runSecurity: async () => { throw new Error('must not run'); },
+  });
+  assert.deepEqual(Object.keys(elsewhere), ['mcpOAuth']);
+});
+
+test('a stored token that is not header-safe never reaches a request or an error message (#767 review)', async () => {
+  const secret = 'secret-alpha\nsecret-beta';
+  let fetched = false;
+  await assert.rejects(probeClaudeUsage({
+    env: { CLAUDE_CONFIG_DIR: '/profiles/selected' },
+    fetcher: async () => { fetched = true; throw new Error('must not run'); },
+    platform: 'darwin',
+    userInfo: () => ({ username: 'fixture-user' }),
+    readFile: async () => JSON.stringify({ mcpOAuth: {} }),
+    runSecurity: async () => ({ stdout: JSON.stringify({ claudeAiOauth: { accessToken: secret } }) }),
+  }), (error) => {
+    assert.equal(error.message, 'stored OAuth credentials are unavailable; sign in explicitly before refreshing');
+    assert.doesNotMatch(error.message, /secret-/);
+    return true;
+  });
+  assert.equal(fetched, false);
+});
+
 test('denied Keychain value read with an existing item reports the Always Allow recovery, not sign-in (issue #98)', async () => {
   const calls = [];
   const secret = 'must-never-appear';
@@ -600,7 +644,10 @@ test('probe failure messages are pinned exactly: missing vs expired credentials 
   await assert.rejects(probeClaudeUsage({
     env: { CLAUDE_CONFIG_DIR: '/profiles/selected' },
     fetcher,
+    platform: 'darwin',
+    userInfo: () => ({ username: 'fixture-user' }),
     readFile: async () => JSON.stringify({ claudeAiOauth: {} }),
+    runSecurity: async () => { throw new Error('item absent'); },
   }), (error) => {
     assert.equal(error.message, 'stored OAuth credentials are unavailable; sign in explicitly before refreshing');
     return true;
@@ -913,7 +960,11 @@ test('usage refresh never logs in or falls back to ambient credentials', async (
   const root = temporaryRoot(t);
   const profile = path.join(root, 'unsigned');
   fs.mkdirSync(profile, { mode: 0o700 });
-  fs.writeFileSync(path.join(profile, '.credentials.json'), '{}', { mode: 0o600 });
+  // A file that carries a (dead) Claude login, so the macOS probe answers from
+  // it and never reaches the real Keychain (#767).
+  fs.writeFileSync(path.join(profile, '.credentials.json'), JSON.stringify({
+    claudeAiOauth: { accessToken: 'fixture-oauth-token', expiresAt: Date.now() - 60_000 },
+  }), { mode: 0o600 });
   await assert.rejects(fetchClaudeUsage({
     claudeConfigDir: profile,
   }), /sign in explicitly before refreshing/);

@@ -70,6 +70,7 @@ STRIPPED_PATHS=(
   "docs/incidents"
   "scripts/lane-codex.sh"
   "scripts/lane-watch.mjs"
+  "scripts/live-proxy-swap.sh"
   "test/lane-codex-args.test.mjs"
   "design/mac-app-roadmap.md"
 )

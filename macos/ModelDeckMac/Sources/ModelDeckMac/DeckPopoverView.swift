@@ -1933,6 +1933,21 @@ struct DeckAccountRowView: View {
         onFixProxySignIn?()
     }
 
+    /// Issue #771: how this card offers its "This week" graph (the window it
+    /// draws and the number that opens it); nil offers no graph at all.
+    private var graphOffer: WeeklyUsageGraph.Offer? {
+        deckModel.weeklyGraphOffer(for: row, isExpanded: isExpanded)
+    }
+
+    private var graphID: DeckWarningID {
+        DeckWarningID(topic: .weeklyGraph, elementID: row.id)
+    }
+
+    /// Opens or closes the graph.
+    private var toggleGraph: () -> Void {
+        { deckModel.toggleWarning(graphID) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button(action: onToggle) {
@@ -1979,6 +1994,13 @@ struct DeckAccountRowView: View {
                     }
                     if proxyRepairIsArmed {
                         Button("Fix sign-in") { fixProxySignIn() }
+                    }
+                }
+                // Issue #771: same contract for the graph trigger on the
+                // card's "% left".
+                if graphOffer != nil {
+                    Button("Show this week's usage graph") {
+                        deckModel.toggleWarning(graphID)
                     }
                 }
             }
@@ -2235,7 +2257,27 @@ struct DeckAccountRowView: View {
                 .strokeBorder(Color.accentColor.opacity(0.5 * glowOpacity), lineWidth: 1)
                 .allowsHitTesting(false)
         )
+        // Issue #771: the card whose graph is open is outlined, as in the
+        // mockup Tim picked.
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.accentColor, lineWidth: 1)
+                .opacity(deckModel.isWarningPresented(graphID) ? 1 : 0)
+                .allowsHitTesting(false)
+        )
         .shadow(color: Color.accentColor.opacity(0.32 * glowOpacity), radius: 7)
+        // Issue #771 (Tim's pick from the 2026-10-22 mockups): the graph opens
+        // in a popover BESIDE the card, so the deck never changes size.
+        .popover(isPresented: deckModel.warningBinding(graphID), arrowEdge: .trailing) {
+            if let window = graphOffer?.window {
+                WeeklyGraphPopoverView(
+                    accountID: row.account.id,
+                    accountLabel: row.account.label,
+                    window: window,
+                    model: deckModel.weeklyGraph
+                )
+            }
+        }
         .onAppear(perform: animateChangeIfNeeded)
         // The open-diff publishes AFTER children appear (parent onAppear
         // ordering), so the trigger listens for the capture generation too;
@@ -2523,6 +2565,9 @@ struct DeckAccountRowView: View {
                         .contentTransition(.numericText(
                             countsDown: (usageChange?.currentRemaining ?? 0) < (usageChange?.previousRemaining ?? 0)
                         ))
+                        // Issue #771: this number opens the card's "This week"
+                        // graph; a click anywhere else still expands the card.
+                        .modifier(WeeklyGraphTrigger(offer: graphOffer, slot: .headline, open: toggleGraph))
                 }
             }
             if showsIdentity, let identity = row.account.identity, !identity.isEmpty {
@@ -2638,6 +2683,13 @@ struct DeckAccountRowView: View {
                                 .font(DeckType.value)
                                 .foregroundStyle(valueColor(for: window))
                                 .monospacedDigit()
+                                // Issue #771: expanded, the headline number is
+                                // gone, so the weekly's own number opens it.
+                                .modifier(WeeklyGraphTrigger(
+                                    offer: graphOffer,
+                                    slot: .row(scope: window.id),
+                                    open: toggleGraph
+                                ))
                                 .layoutPriority(2)
                         }
                         UsageBarView(window: window)

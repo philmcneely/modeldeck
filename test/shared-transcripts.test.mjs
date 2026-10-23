@@ -41,6 +41,7 @@ function fixture(t, options = {}) {
   const second = store.saveAccount({ provider: 'claude', label: 'B', profileRef: secondHome });
   t.after(async () => {
     await service.stopAutoRefresh();
+    await Promise.all([...service.sharedTranscriptCountTasks.values()]);
     store.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -124,7 +125,9 @@ test('activation-still-succeeds-when-linking-fails', async (t) => {
   assert.doesNotMatch(log.mock.calls[0].arguments.join(' '), /private details|\.jsonl/);
   const state = await data.service.state();
   const account = state.accounts.find((item) => item.id === data.second.id);
-  assert.equal(account.sharedTranscripts, 0);
+  assert.equal(account.sharedTranscripts, undefined);
+  await Promise.all([...data.service.sharedTranscriptCountTasks.values()]);
+  assert.equal((await data.service.state()).accounts.find((item) => item.id === data.second.id).sharedTranscripts, 0);
   assert.equal(account.sharedTranscriptsWarning, result.warnings[0]);
   deny.mock.restore();
   await data.service.activateAccount(data.second.id);
@@ -221,6 +224,8 @@ test('link-count-is-cached-and-broken-targets-are-not-counted', async (t) => {
   assert.equal(lstat.mock.callCount(), 0);
   fs.unlinkSync(original);
   now = 30_001;
+  assert.deepEqual(await data.service.accountSharedTranscriptState(data.second), { sharedTranscripts: 1 });
+  await data.service.sharedTranscriptCountTasks.get(data.secondHome);
   assert.deepEqual(await data.service.accountSharedTranscriptState(data.second), { sharedTranscripts: 0 });
   fs.mkdirSync(original);
   assert.deepEqual(await sharedTranscriptState({ profilesDir: data.profilesDir, profileRef: data.secondHome }), { sharedTranscripts: 0 });
@@ -396,4 +401,77 @@ test('owned-link-pruning-survives-a-daemon-restart-and-preserves-replacements', 
   });
   await restartedAgain.reconcileActiveTranscripts();
   assert.throws(() => fs.lstatSync(linked), { code: 'ENOENT' });
+});
+
+
+test('account-state-answers-while-shared-transcript-count-is-stalled', async (t) => {
+  let now = 0;
+  const data = fixture(t, { now: () => now });
+  transcript(data.firstHome);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let entered;
+  const scanning = new Promise((resolve) => { entered = resolve; });
+  const open = fs.promises.opendir;
+  let scans = 0;
+  t.mock.method(fs.promises, 'opendir', async (...args) => {
+    scans += 1;
+    entered();
+    await gate;
+    return open(...args);
+  });
+  const first = data.service.state();
+  try {
+    const result = await Promise.race([
+      first,
+      new Promise((resolve) => setTimeout(() => resolve(null), 100)),
+    ]);
+    assert.ok(result, 'account status must not wait for optional conversation counts');
+    assert.equal(result.accounts.length, 2);
+    await scanning;
+    const started = scans;
+    now = 60_000;
+    await data.service.state();
+    assert.equal(scans, started, 'a slow count must not start another scan when its TTL passes');
+  } finally {
+    release();
+    await first;
+    await Promise.all([...data.service.sharedTranscriptCountTasks.values()]);
+  }
+});
+
+
+test('reconciliation-does-not-start-a-second-pending-conversation-count', async (t) => {
+  let now = 0;
+  const data = fixture(t, { now: () => now });
+  transcript(data.firstHome);
+  transcript(data.secondHome, '22222222-2222-4222-8222-222222222222.jsonl');
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let entered;
+  const scanning = new Promise((resolve) => { entered = resolve; });
+  const open = fs.promises.opendir;
+  let scans = 0;
+  t.mock.method(fs.promises, 'opendir', async (directory, ...args) => {
+    if (directory === path.join(data.secondHome, 'projects')) {
+      scans += 1;
+      if (scans === 1) { entered(); await gate; }
+    }
+    return open(directory, ...args);
+  });
+  await data.service.accountSharedTranscriptState(data.second);
+  const pending = data.service.sharedTranscriptCountTasks.get(data.secondHome);
+  try {
+    await scanning;
+    await data.service.reconcileAccountTranscripts(data.second);
+    const before = scans;
+    now = 30_001;
+    assert.deepEqual(await data.service.accountSharedTranscriptState(data.second), { sharedTranscripts: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(scans, before, 'reconciliation must retain ownership of the unfinished recount');
+  } finally {
+    release();
+    await pending;
+    await Promise.all([...data.service.sharedTranscriptCountTasks.values()]);
+  }
 });
